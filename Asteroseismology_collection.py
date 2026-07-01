@@ -461,6 +461,15 @@ def outer_tolist(array_or_arrays):
         return array_or_arrays
     return [outer_tolist(arrayi) for arrayi in array_or_arrays]
 
+def _nearest(tomatch,tosearch ):
+    if len(np.array(tosearch).shape) == 0:
+        return tosearch * (0 * tomatch + 1)
+    if len(np.array(tomatch).shape) == 0:
+        return tosearch[np.argmin(np.abs(tosearch - tomatch))]
+    return tosearch[np.argmin(np.abs(tomatch[:, None] - tosearch[None, :]), axis=1)]
+
+nearest=make_func_accept_Variables(_nearest)
+
     #%%% basic func
 def slope(x,k,d):
     return k*x+d
@@ -473,221 +482,20 @@ def lorentz_sum(x, x0, amp, fwhm):
     dx = x[:,None] - x0
     return np.sum(amp*((fwhm/2)**2)/(dx**2+(fwhm/2)**2), axis=1)
 
-def circular_mean(phases,weights=None): #[0,1)
+def circular_mean(phases,weights=None,period=1): #[0,1)
     
-    radian = phases*2*np.pi
+    radian = phases*(2*np.pi/period)
     
-    C = np.average(np.cos(radian),weights=weights)
-    S = np.average(np.sin(radian),weights=weights)
-    mean    = np.arctan2(S, C)   / (2*np.pi)
-    radius  = np.sqrt(C**2+S**2)
-    stddev  = np.sqrt(-2*np.log(radius))/ (2*np.pi)
+    Cos = np.average(np.cos(radian),weights=weights)
+    Sin = np.average(np.sin(radian),weights=weights)
+    mean    = np.arctan2(Sin, Cos)   * (period/(2*np.pi))
+    radius  = np.sqrt(Cos**2+Sin**2)
+    stddev  = np.sqrt(-2*np.log(radius)) * (period/(2*np.pi))
     
     if mean < 0:
-        mean += 1
-    radius = min(max(radius, 0.0), 1.0)
-    
+        mean += period
+        
     return mean, stddev 
-
-#%% old stuff
-    #%%% deviance
-# def deviance_chi2_2(y_obs, y_fit):
-#     eps = 1e-12
-#     y_obs = np.clip(y_obs, eps, None)
-#     y_fit = np.clip(y_fit, eps, None)
-
-#     r = y_obs / y_fit
-#     return 2.0 * np.sum(r - np.log(r) - 1.0)
-# D_bestfit=deviance_chi2_2(y_obs+s.Bkg_func(x_obs), y_fit+s.Bkg_func(x_obs))
-# D_background=deviance_chi2_2(y_obs+s.Bkg_func(x_obs), s.Bkg_func(x_obs))
-# red_D=D_bestfit/dof
-# delta_D=(D_background-D_bestfit)/dof
-
-    #%%% joel fit
-
-# from scipy.interpolate import pchip_interpolate
-
-# interps = {
-#     'np': lambda xi, yi, x: np.interp(x, xi, yi),
-#     'pchip': lambda xi, yi, x: pchip_interpolate(xi, yi, x)
-# }
-
-# INTERP = 'pchip'
-
-def _nearest_(ν, ν_target):
-    '''
-    Utility function: given 1d arrays ν and ν_target,
-    return a 1d array with the same shape as ν, containing
-    the nearest elements of ν_target to each element of ν.
-    '''
-    if len(np.array(ν_target).shape) == 0:
-        return ν_target * (0 * ν + 1)
-    if len(np.array(ν).shape) == 0:
-        return ν_target[np.argmin(np.abs(ν_target - ν))]
-    return ν_target[np.argmin(np.abs(ν[:, None] - ν_target[None, :]), axis=1)]
-
-nearest=make_func_accept_Variables(_nearest_)
-
-# def Θ_p(ν, Δν, ν_p=None, l=1, ε_p=None):
-#     '''
-#     p-mode phase function Θ_p. Either provide a list of
-#     p-mode frequencies ν_p, or a callable phase function ε_p.
-#     '''
-#     if ν_p is None:
-#         return np.pi * (ν/Δν - l/2 - ε_p(ν))
-#     else:
-#         return np.pi * np.where(
-#             (ν <= np.max(ν_p)) & (ν >= np.min(ν_p)),
-#             interps[INTERP](ν_p, np.arange(len(ν_p)), ν),
-#             (ν - nearest(ν, ν_p)) / Δν + np.round((nearest(ν,ν_p)-ν_p[0]) / Δν)
-#         )
-
-# def Θ_g(ν, ΔΠ, ν_g=None, ε_g=None):
-#     '''
-#     g-mode phase function Θ_g. Either provide a list of
-#     g-mode frequencies ν_g, or a callable phase function ε_g.
-#     '''
-#     if ν_g is None:
-#         return -np.pi * (1/ν/ΔΠ - ε_g(ν))
-#     else:
-#         return np.pi * np.where(
-#             (ν <= np.max(ν_g)) & (ν >= np.min(ν_g)),
-#             -interps[INTERP](np.sort(1/ν_g), np.arange(len(ν_g)), 1/ν),
-#             (1/nearest(ν, ν_g) - 1/ν) / ΔΠ
-#         )
-
-# def F(ν, ν_p, ν_g, Δν, ΔΠ, q):
-#     '''
-#     Characteristic function F such that F(ν) = 0 yields eigenvalues.
-#     '''
-#     return np.tan(Θ_p(ν, Δν, ν_p)) * np.tan(Θ_g(ν, ΔΠ, ν_g)) - q
-
-# def Fp(ν, ν_p, ν_g, Δν, ΔΠ, qp=0):
-#     '''
-#     First derivative dF/dν. Required for some numerical methods.
-#     '''
-#     return (
-#         np.tan(Θ_g(ν, ΔΠ, ν_g)) / np.cos(Θ_p(ν, Δν, ν_p))**2 * np.pi / Δν
-#         + np.tan(Θ_p(ν, Δν, ν_p)) / np.cos(Θ_g(ν, ΔΠ, ν_g))**2 * np.pi / ΔΠ / ν**2
-#         - qp
-#     )
-
-# def Fpp(ν, ν_p, ν_g, Δν, ΔΠ, qpp=0):
-#     '''
-#     Second derivative d²F / dν². Required for some numerical methods.
-#     '''
-#     return (
-#         2 * F(ν, ν_p, ν_g, Δν, ΔΠ, 0) / np.cos(Θ_p(ν, Δν, ν_p))**2 * (np.pi / Δν)**2
-#         + 2 * F(ν, ν_p, ν_g, Δν, ΔΠ, 0) / np.cos(Θ_g(ν, ΔΠ, ν_g))**2 * (np.pi / ΔΠ / ν**2)**2
-#         - 2 * np.tan(Θ_p(ν, Δν, ν_p)) / np.cos(Θ_g(ν, ΔΠ, ν_g))**2 * np.pi / ΔΠ / ν**3
-#         + 2 / np.cos(Θ_p(ν, Δν, ν_p))**2 * np.pi / Δν / np.cos(Θ_g(ν, ΔΠ, ν_g))**2 * np.pi / ΔΠ / ν**2
-#         - qpp
-#     )
-
-
-# def halley_iteration(x, y, yp, ypp, λ=1.):
-#     '''
-#     Halley's method (2nd order Householder):
-#     x_{n+1} = x_n = 2 f f' / (2 f'² - f f''),
-#     again with damping.
-#     '''
-#     return x - λ * 2 * y * yp / (2 * yp * yp - y * ypp)
-
-# def couple_halley(ν_p, ν_g, q_p, q_g, maxiter=50, λ=.5):
-#     '''
-#     Solve the characteristic equation with Halley's method.
-#     This converges even faster than Newton's method and is capable
-#     of handling quite numerically difficult scenarios with not
-#     very much damping.
-#     '''
-#     Δν = np.median(np.diff(ν_p))
-#     ΔΠ = -np.median(np.diff(1/ν_g))
-
-#     νm_p = np.copy(ν_p)
-#     νm_g = np.copy(ν_g)
-
-#     for _ in range(maxiter):
-#         νm_p = halley_iteration(νm_p,
-#                                 F(νm_p, ν_p, ν_g, Δν, ΔΠ, q_p),
-#                                 Fp(νm_p, ν_p, ν_g, Δν, ΔΠ),
-#                                 Fpp(νm_p, ν_p, ν_g, Δν, ΔΠ), λ=λ)
-#         νm_g = halley_iteration(νm_g,
-#                                 F(νm_g, ν_p, ν_g, Δν, ΔΠ, q_g),
-#                                 Fp(νm_g, ν_p, ν_g, Δν, ΔΠ),
-#                                 Fpp(νm_g, ν_p, ν_g, Δν, ΔΠ), λ=λ)
-
-#     return νm_p, νm_g
-
-
-# no glitch:
-# def calc_dF(mixed_modes,  Θ_p, Θ_g , dpi_Ms, dnu, dq=0):
-    
-#     # Θ_p=Theta_P(mixed_modes, pi_modes, dnu)
-#     # Θ_g=Theta_G(mixed_modes, gamma_modes, dpi_Ms)
-    
-#     return ( np.tan(Θ_g) / np.cos(Θ_p)**2 * np.pi / dnu
-#            + np.tan(Θ_p) / np.cos(Θ_g)**2 * np.pi / dpi_Ms / mixed_modes**2
-#            - dq
-#            )
-
-# def calc_ddF(mixed_modes,  Θ_p, Θ_g  , dpi_Ms, dnu, ddq=0):
-    
-#     # Θ_p=Theta_P(mixed_modes, pi_modes, dnu)
-#     # Θ_g=Theta_G(mixed_modes, gamma_modes, dpi_Ms)
-    
-#     return (
-#           2 * np.tan(Θ_p) * np.tan(Θ_g) / np.cos(Θ_p)**2 * (np.pi / dnu)**2
-#         + 2 * np.tan(Θ_p) * np.tan(Θ_g) / np.cos(Θ_g)**2 * (np.pi / dpi_Ms / mixed_modes**2)**2
-#         - 2 * np.tan(Θ_p) / np.cos(Θ_g)**2 * np.pi / dpi_Ms / mixed_modes**3
-#         + 2 / np.cos(Θ_p)**2 * np.pi / dnu / np.cos(Θ_g)**2 * np.pi / dpi_Ms / mixed_modes**2
-#         - ddq
-#     )
-# def couple_halley(pi_modes, gamma_modes, q, dpi_Ms, dnu, maxiter=50, damp=0.5,tol=1e-8,interp_kind='nearest'):
-    
-#     prev_step = np.inf
-#     mixed_p_modes  = np.copy(pi_modes)
-#     mixed_g_modes = np.copy(gamma_modes)
-    
-#     if isinstance(q,(np.ndarray,list)):
-#         q_func=interp1d(pi_modes,q,kind=interp_kind,bounds_error=False,fill_value=(q[0],q[-1]))
-#     else:
-#         q_func = lambda x: q
-        
-#     for niter in range(maxiter):
-    
-#         q_p = q_func(mixed_p_modes)
-#         q_g = q_func(mixed_g_modes)
-
-#         Θ_p=Theta_P(mixed_p_modes, pi_modes, dnu)
-#         Θ_g=Theta_G(mixed_p_modes, gamma_modes,dpi_Ms)
-        
-#         mixed_p_modes, step_p = halley_iteration(mixed_p_modes,
-#                             calc_F(  mixed_p_modes,  Θ_p, Θ_g , q_p, dpi_Ms, dnu),
-#                             calc_dF( mixed_p_modes,  Θ_p, Θ_g ,      dpi_Ms, dnu),
-#                             calc_ddF(mixed_p_modes,  Θ_p, Θ_g ,      dpi_Ms, dnu), λ=damp)
-        
-#         Θ_p=Theta_P(mixed_g_modes, pi_modes, dnu)
-#         Θ_g=Theta_G(mixed_g_modes, gamma_modes,dpi_Ms)
-        
-#         mixed_g_modes,step_g = halley_iteration(mixed_g_modes,
-#                             calc_F(  mixed_g_modes,  Θ_p, Θ_g , q_g, dpi_Ms, dnu),
-#                             calc_dF( mixed_g_modes,  Θ_p, Θ_g ,      dpi_Ms, dnu),
-#                             calc_ddF(mixed_g_modes,  Θ_p, Θ_g ,      dpi_Ms, dnu), λ=damp)
-        
-#         max_step = max(np.max(np.abs(step_p)),
-#                        np.max(np.abs(step_g)))
-        
-#         if max_step < tol:
-#             # print(niter)
-#             break
-        
-#         # if max_step > prev_step:
-#         #     damp *= 0.5   # step got worse → back off
-#         # else:
-#         #     damp = min(1.0, damp * 1.1)
-#         # print('damp= ' ,damp)
-
-#     return mixed_p_modes, mixed_g_modes
 
 #%% get data
 def get_fits_data(filename,get_header=False,print_header=False,dataindex=1):
@@ -702,7 +510,7 @@ def get_fits_data(filename,get_header=False,print_header=False,dataindex=1):
             return header,data
     else: return data
     
-    
+
 def read_table(filename,astropyTable=True,printInstruction=False):
     #return_keys: .colnames
     # .to_pandas
@@ -730,6 +538,14 @@ def read_table(filename,astropyTable=True,printInstruction=False):
             data=Table.read(filename,format="ascii")
             if printInstruction:
                 print("data=Table.read(filename,format='ascii')")
+        else:
+            if printInstruction:
+                print("ToDo")
+                
+    elif fileformat=="vot":
+        data = Table.read(filename, format='votable')
+        if printInstruction:
+            print("data=Table.read(filename,format='vot')")
         else:
             if printInstruction:
                 print("ToDo")
@@ -844,7 +660,6 @@ def get_Mast_lc(starname='KIC 010841730',author='Kepler',cadence=None,key='flux'
             mask=(time>minCut[idx_cut]) & (time<maxCut[idx_cut])
             time=time[~mask]
             flux=flux[~mask]
-        
         
         if normalize:
             flux = flux/np.median(flux)
@@ -1023,7 +838,7 @@ def calc_lomb_scargle(t,y,oversample=1,amplitude=False,method="fast",nyq_freq=Fa
     
     sc = model.power(freq, method=method, normalization="psd")
     
-    amp = 2*np.sqrt(sc/len(t))  #https://stackoverflow.com/questions/59693115/how-to-calculate-amplitude-from-astropy-lomb-scargle-normalized-psd
+    amp = 2*np.sqrt(sc/len(t))  
     
     if return_in_ppm:
         amp*=1e6
@@ -1082,7 +897,7 @@ def calc_psd(time,flux,hpf_flag=False,sigma_clip=False,width_microhertz=5,oversa
 #%%
 #%% theo mixed modes
     
-class asympthotic_theory():
+class asympthotic_theory(): # consider jax # use functools.partial?
     #%%% physics
     def __init__(self, pi_modes=None, gamma_modes=None, q=None, dpi_Ms=None, dnu=None
                      ,buoyancy_glitch=False, A_g=0.5, omega_g=100, phi_g=np.pi,Delta_g=0,glitch_type='gaussian'
@@ -1109,6 +924,17 @@ class asympthotic_theory():
         self.phi_p=phi_p
         self.b_p  =b_p
         
+        self.pi_min=np.min(self.pi_modes)
+        self.pi_max=np.max(self.pi_modes)
+        
+        self.gamma_min=np.min(self.gamma_modes)
+        self.gamma_max=np.max(self.gamma_modes)
+        
+        self.gamma_modes_period=np.sort(1/self.gamma_modes)
+        
+        self.n_p = np.arange(len(self.pi_modes))
+        self.n_g = np.arange(len(self.gamma_modes))
+        
         if isinstance(q,(np.ndarray,list)):
             self.q_func=interp1d(self.pi_modes,self.q,kind='nearest',bounds_error=False,fill_value=(self.q[0],self.q[-1]))
         else:
@@ -1120,9 +946,9 @@ class asympthotic_theory():
             return np.pi * (mixed_modes - self.pi_modes[0]) / self.dnu
         
         theta_p= np.pi * np.where(
-            (mixed_modes <= np.max(self.pi_modes)) & (mixed_modes >= np.min(self.pi_modes))
+            (mixed_modes <= self.pi_max) & (mixed_modes >= self.pi_min)
             # ,pchip_interpolate(pi_modes, np.arange(len(pi_modes)), mixed_modes)
-            ,np.interp(mixed_modes,self.pi_modes,np.arange(len(self.pi_modes)))
+            ,np.interp(mixed_modes,self.pi_modes,self.n_p)
             ,(mixed_modes - nearest(mixed_modes, self.pi_modes)) / self.dnu + np.round((nearest(mixed_modes,self.pi_modes)-self.pi_modes[0]) / self.dnu)
             )
         # return np.pi * (mixed_modes     - pi_modes)     / s.dnu
@@ -1135,12 +961,12 @@ class asympthotic_theory():
     def Theta_G(self,mixed_modes):
         
         theta_g= np.pi * np.where(
-            (mixed_modes <= np.max(self.gamma_modes)) & (mixed_modes >= np.min(self.gamma_modes))
+            (mixed_modes <= self.gamma_max) & (mixed_modes >= self.gamma_min)
             # ,-pchip_interpolate(np.sort(1/gamma_modes), np.arange(len(gamma_modes)), 1/mixed_modes)
-            ,-np.interp(1/mixed_modes,np.sort(1/self.gamma_modes),np.arange(len(self.gamma_modes)))
+            ,-np.interp(1/mixed_modes,self.gamma_modes_period,self.n_g)
             
             # ,-((1/mixed_modes - nearest(1/mixed_modes, 1/gamma_modes) ) / dpi_Ms)# + np.round((nearest(1/mixed_modes, 1/gamma_modes) - 1/gamma_modes[0])/ dpi_Ms))
-            ,-(np.interp(nearest(1/mixed_modes, 1/self.gamma_modes),np.sort(1/self.gamma_modes),np.arange(len(self.gamma_modes)))+(1/mixed_modes-nearest(1/mixed_modes, 1/self.gamma_modes)) / self.dpi_Ms
+            ,-(np.interp(nearest(1/mixed_modes, 1/self.gamma_modes),self.gamma_modes_period,self.n_g)+(1/mixed_modes-nearest(1/mixed_modes, 1/self.gamma_modes)) / self.dpi_Ms
             )
             )
         # return np.pi * (1.0/self.gamma_modes - 1.0/mixed_modes) / self.dpi_Ms
@@ -1343,18 +1169,13 @@ class asympthotic_theory():
     def calc_ζp(self,mixed_modes):
         
         q_p = self.q_func(mixed_modes)
-        θ_p=self.Theta_P(mixed_modes)
+        θ_p = self.Theta_P(mixed_modes)
     
         return 1/(1 + self.dpi_Ms / self.dnu * mixed_modes**2 / (q_p * np.cos(θ_p)**2 + np.sin(θ_p)**2/q_p))
     
     
         #%%% halley
     def halley_iteration(self,x, y, dy, ddy, damp=1.):
-        '''
-        Halley's method (2nd order Householder):
-        x_{n+1} = x_n = 2 f f' / (2 f'² - f f''),
-        again with damping.
-        '''
         
         denom = 2 * dy * dy - y * ddy
         denom = np.where(np.abs(denom) < 1e-15,np.where(denom >= 0, 1e-15, -1e-15),denom)
@@ -1365,7 +1186,6 @@ class asympthotic_theory():
         step_max = np.max(self.damp*np.abs(step))
         if step_max > np.max([self.prev_step,1e-4]):
             self.damp = max(0.2, self.damp * 0.5)
-            # print('damp= ' ,self.damp)
         else:
             self.damp = min(1.0, self.damp * 1.3)
         
@@ -1383,9 +1203,8 @@ class asympthotic_theory():
         if self.acoustic_glitch:
             mixed_p_modes = calc_glitched_pi_modes(pi_modes=self.pi_modes,dnu=self.dnu,A_p=self.A_p,tau_p=self.tau_p,phi_p=self.phi_p,b_p=self.b_p)
             
-            omega_mid=2*np.pi*np.mean(self.gamma_modes)
-            A_eff = self.A_p * np.exp(-2 * self.b_p**2 * omega_mid**2)
-            # print('A_eff  ',A_eff)
+            # omega_mid=2*np.pi*np.mean(self.gamma_modes)
+            # A_eff = self.A_p * np.exp(-2 * self.b_p**2 * omega_mid**2)
         else: 
             mixed_p_modes = np.copy(self.pi_modes)
         
@@ -1439,7 +1258,6 @@ class asympthotic_theory():
             self.prev_step=step_max
             
             if step_max < tol:
-                # print(niter,self.damp)
                 break
         
         if niter==maxiter-1 and step_max>1e-2:
@@ -1990,98 +1808,7 @@ class Star():
     
         return s
                 
-        #%%%% get dnu
-    def get_dnu(s,freq=False,psd=False,numax=False,smooth_stddev=True
-                 ,dnu_guess_minmax=False,dnu_initial_guess=False
-                 ,fminmax=False
-                 ,yminmax=False,xminmax=False
-                 ,interactive=False
-                 ,plot=True,ax_dnu=False):
-        
-        if isinstance(freq, bool):
-            freq=s.freq_full.copy()
-            psd =s.psd_full.copy()
-        if not numax:
-            numax=s.numax
-            
-        if isinstance(smooth_stddev,bool) and smooth_stddev:
-            smooth_percent = 0.1
-            freq_res = np.median(np.diff(freq))
-            smooth_stddev=(numax *smooth_percent)/freq_res /100
-            
-        if not isinstance(smooth_stddev,bool):
-            freq,psd_sm = smoothing(freq=freq,psd=psd,method='gauss',plot=False,do_bin=False,stddev=smooth_stddev)
-            #,bins=5001,wlength=101,polyorder=2,stddev=10,boxw=6,do_bin=False):
-        else:
-            psd_sm=psd
-        
-        if not fminmax:
-            fminmax= [numax*0.6,numax*1.4]
-        
-        mask = (freq > fminmax[0]) & (freq < fminmax[1])
-        
-        if plot and not ax_dnu:
-            fig_dnu=plt.figure(figsize=(10,9))
-            grid=(2,1)
-            axPSD    = plt.subplot2grid(grid,(0,0),rowspan=1,colspan=1)
-            axCorr   = plt.subplot2grid(grid,(1,0),rowspan=1,colspan=1)
-                
-            axPSD.plot(freq[mask],psd[mask],color='lightgrey')
-            plot_PSD(freq[mask],psd_sm[mask],axPSD=axPSD,nu_max=numax
-                     ,color_nu_max_line='r')
-            
-        elif plot and ax_dnu:
-            axCorr = ax_dnu
-        
-        corr = np.correlate(psd_sm[mask],psd_sm[mask],'full') 
-        corr = corr[len(corr)//2:]
-        corr = corr/corr[0]
-        freq_corr =np.linspace(0,len(corr)-1,len(corr)) * np.median(np.diff(freq))
-        
-        if plot:
-            axCorr.plot(freq_corr,corr,'k')
-            axCorr.set_xlabel('Δν [μHz]')
-            axCorr.set_ylabel('autocorrelation')
-        
-        if interactive:    
-            fig_dnu.canvas.mpl_connect('button_press_event', lambda event: s._onclick_LorentzFit(event,limit_y=True,fit_dnu=True))
-            fig_dnu.canvas.mpl_connect('key_press_event', s._onclick_delete_LorentzFit)
-          
-        else:
-            initial_guess_dnu=0.266*numax**0.767
-            
-            idx_peaks,_=find_peaks(corr, height=np.median(corr)*2, distance=len(freq_corr[freq_corr<0.3*initial_guess_dnu]))
-            
-            idx_peaks_sort=np.argsort(corr[idx_peaks])[::-1] 
-            idx_peaks=idx_peaks[idx_peaks_sort]
-            idx_peak_dnu=idx_peaks[(freq_corr[idx_peaks]>0.6*initial_guess_dnu) & (freq_corr[idx_peaks]<1.4*initial_guess_dnu)][0]
-            
-            # axCorr.axvline(initial_guess_dnu,color='m')
-            # for i in idx_peaks:
-            #     axCorr.axvline(freq_corr[i])
-            # axCorr.axvline(freq_corr[idx_peak_dnu],zorder=1000,color='lime')
-            
-            idx_min=np.where(corr==np.min(corr[(freq_corr<freq_corr[idx_peak_dnu]) & (freq_corr>numax/20)]))[0][0]
-            if isinstance(xminmax, bool):
-                xminmax=[freq_corr[idx_min],freq_corr[idx_peak_dnu]+(freq_corr[idx_peak_dnu]-freq_corr[idx_min])]
-                
-            if isinstance(yminmax, bool):
-                yminmax=[corr[idx_min],corr[idx_peak_dnu]*1.1]
-                
-            if plot:
-                axCorr.plot(freq_corr[idx_peak_dnu],corr[idx_peak_dnu],'rx')
-                axBox     = axCorr.inset_axes([0.45 , 0.4, 0.53, 0.55])
-            else:
-                axCorr=False
-                axBox=False
-                
-            dnu=s._fit_Lorenzian_in_box(x=freq_corr,y=corr,xminmax=xminmax,yminmax=yminmax,ax=axCorr,axBox=axBox).x_0.value
-            
-            if plot:
-                axBox.text(0.65,0.87,'Δν = {:.2f} μHz'.format(dnu),transform=axBox.transAxes)
-            
-            return dnu
-        
+
         #%%%% background
             #%%%%% functions
     def calc_R(s,freq):
@@ -2277,7 +2004,7 @@ class Star():
                              ,bounds=bounds,maxiter=1000000,popsize=200)
             print("background fit succeded: ",result.success)
         elif s.minimizer=='basinhopping':
-            result = basinhopping(neg_log_likelihood_X22dof, initial_guess,  #minimizer_kwargs=minimizer_options
+            result = basinhopping(neg_log_likelihood_X22dof, initial_guess  #,minimizer_kwargs=minimizer_options
                                     # ,niter=10000
                                     )
         else:
@@ -2416,6 +2143,99 @@ class Star():
     
         return freq,psd_noBack,numax
     
+        #%%%% get dnu
+    def get_dnu(s,freq=False,psd=False,numax=False,smooth_stddev=True
+                 ,dnu_guess_minmax=False,dnu_initial_guess=False
+                 ,fminmax=False
+                 ,yminmax=False,xminmax=False
+                 ,interactive=False
+                 ,plot=True,ax_dnu=False):
+        
+        if isinstance(freq, bool):
+            freq=s.freq_full.copy()
+            psd =s.psd_full.copy()
+        if not numax:
+            numax=s.numax
+            
+        if isinstance(smooth_stddev,bool) and smooth_stddev:
+            smooth_percent = 0.1
+            freq_res = np.median(np.diff(freq))
+            smooth_stddev=(numax *smooth_percent)/freq_res /100
+            
+        if not isinstance(smooth_stddev,bool):
+            freq,psd_sm = smoothing(freq=freq,psd=psd,method='gauss',plot=False,do_bin=False,stddev=smooth_stddev)
+            #,bins=5001,wlength=101,polyorder=2,stddev=10,boxw=6,do_bin=False):
+        else:
+            psd_sm=psd
+        
+        if not fminmax:
+            fminmax= [numax*0.6,numax*1.4]
+        
+        mask = (freq > fminmax[0]) & (freq < fminmax[1])
+        
+        if plot and not ax_dnu:
+            fig_dnu=plt.figure(figsize=(10,9))
+            grid=(2,1)
+            axPSD    = plt.subplot2grid(grid,(0,0),rowspan=1,colspan=1)
+            axCorr   = plt.subplot2grid(grid,(1,0),rowspan=1,colspan=1)
+                
+            axPSD.plot(freq[mask],psd[mask],color='lightgrey')
+            plot_PSD(freq[mask],psd_sm[mask],axPSD=axPSD,nu_max=numax
+                     ,color_nu_max_line='r')
+            
+        elif plot and ax_dnu:
+            axCorr = ax_dnu
+        
+        corr = np.correlate(psd_sm[mask],psd_sm[mask],'full') 
+        corr = corr[len(corr)//2:]
+        corr = corr/corr[0]
+        freq_corr =np.linspace(0,len(corr)-1,len(corr)) * np.median(np.diff(freq))
+        
+        if plot:
+            axCorr.plot(freq_corr,corr,'k')
+            axCorr.set_xlabel('Δν [μHz]')
+            axCorr.set_ylabel('autocorrelation')
+        
+        if interactive:    
+            fig_dnu.canvas.mpl_connect('button_press_event', lambda event: s._onclick_LorentzFit(event,limit_y=True,fit_dnu=True))
+            fig_dnu.canvas.mpl_connect('key_press_event', s._onclick_delete_LorentzFit)
+          
+        else:
+            initial_guess_dnu=0.266*numax**0.767
+            
+            idx_peaks,_=find_peaks(corr, height=np.median(corr)*2, distance=len(freq_corr[freq_corr<0.3*initial_guess_dnu]))
+            
+            idx_peaks_sort=np.argsort(corr[idx_peaks])[::-1] 
+            idx_peaks=idx_peaks[idx_peaks_sort]
+            idx_peak_dnu=idx_peaks[(freq_corr[idx_peaks]>0.6*initial_guess_dnu) & (freq_corr[idx_peaks]<1.4*initial_guess_dnu)][0]
+            
+            # axCorr.axvline(initial_guess_dnu,color='m')
+            # for i in idx_peaks:
+            #     axCorr.axvline(freq_corr[i])
+            # axCorr.axvline(freq_corr[idx_peak_dnu],zorder=1000,color='lime')
+            
+            idx_min=np.where(corr==np.min(corr[(freq_corr<freq_corr[idx_peak_dnu]) & (freq_corr>numax/20)]))[0][0]
+            if isinstance(xminmax, bool):
+                xminmax=[freq_corr[idx_min],freq_corr[idx_peak_dnu]+(freq_corr[idx_peak_dnu]-freq_corr[idx_min])]
+                
+            if isinstance(yminmax, bool):
+                yminmax=[corr[idx_min],corr[idx_peak_dnu]*1.1]
+                
+            if plot:
+                axCorr.plot(freq_corr[idx_peak_dnu],corr[idx_peak_dnu],'rx')
+                axBox     = axCorr.inset_axes([0.45 , 0.4, 0.53, 0.55])
+            else:
+                axCorr=False
+                axBox=False
+                
+            dnu=s._fit_Lorenzian_in_box(x=freq_corr,y=corr,xminmax=xminmax,yminmax=yminmax,ax=axCorr,axBox=axBox).x_0.value
+            
+            if plot:
+                axBox.text(0.65,0.87,'Δν = {:.2f} μHz'.format(dnu),transform=axBox.transAxes)
+            
+            return dnu
+        
+    
     #%%% get uncertainties for numax dnu
     
     def split8repeat(s,n_steps=None,window_width=None,step=None
@@ -2495,7 +2315,7 @@ class Star():
             
         s.numax_uncertainty=np.std(numaxs)
         s.dnu_uncertainty=np.std(dnus)
-            
+    
     #%%% interactive LorentzFit
     
     def _onclick_LorentzFit(s,event,limit_y=False,fit_dnu=False):
@@ -3238,8 +3058,8 @@ class Star():
                 s.template_result_sample[i_np] = sampler.get_chain(discard=int(nsteps*0.01),flat=True,thin=thin) #!!!
                 s.template_result_weights[i_np]=None#np.ones_like(s.template_result_sample[i_np])#None
                 
-                tau = sampler.get_autocorr_time()
-                print(50*tau)
+                # tau = sampler.get_autocorr_time()
+                # print(50*tau)
                 
                 statistics_type='probability density'
                 
@@ -3394,7 +3214,7 @@ class Star():
                 
 
             omega_g_glitch_minmax   = (max([1,s.omega_g_glitch*0+1]),min([5000,max([s.omega_g_glitch*3,2000])]))
-            phi_g_glitch_minmax     = (s.phi_g_glitch-np.pi-1,s.phi_g_glitch+np.pi+1)
+            phi_g_glitch_minmax     = (s.phi_g_glitch-np.pi,s.phi_g_glitch+np.pi)
             
             bounds+=[A_g_glitch_minmax,omega_g_glitch_minmax,phi_g_glitch_minmax]+Delta_g_glitch_minmax
             
@@ -3428,6 +3248,7 @@ class Star():
 
         s.addNoise=False
         s.calc_hessian_with_bounds=False
+
         def _to_minimize(params):
             if scale_free_parameters:
                 params=denormalize(params)
@@ -3448,7 +3269,8 @@ class Star():
                 eps_p1   = params[0]
                 params   = params[1:] 
                 
-                eps_p1 = eps_p1 % 1
+                if not s.MCMC_or_dynesty=='dynesty':
+                    eps_p1 = eps_p1 % 1
                 
             if not s.buoyancy_glitch:
                 eps_g1   = params[:s.num_orders]
@@ -3474,7 +3296,8 @@ class Star():
                     else:
                         return 1e20
                 
-                phi_p_glitch=((phi_p_glitch+np.pi)%(2*np.pi))-np.pi
+                if not s.MCMC_or_dynesty=='dynesty':
+                    phi_p_glitch=((phi_p_glitch+np.pi)%(2*np.pi))-np.pi
             else:
                 A_p_glitch=False
                 tau_p_glitch=False
@@ -3488,14 +3311,16 @@ class Star():
                 else:
                     A_g_glitch,omega_g_glitch,phi_g_glitch,Delta_g_glitch=params[-4:]
                     
-                phi_g_glitch=((phi_g_glitch+np.pi)%(2*np.pi))-np.pi
+                if not s.MCMC_or_dynesty=='dynesty':
+                    phi_g_glitch=((phi_g_glitch+np.pi)%(2*np.pi))-np.pi
             else:
                 A_g_glitch=False
                 omega_g_glitch=False
                 phi_g_glitch=False
                 Delta_g_glitch=False
         
-            eps_g1 = eps_g1 % 1
+            if not s.MCMC_or_dynesty=='dynesty':
+                eps_g1 = eps_g1 % 1
             
             if s.acoustic_glitch:
                 pi_modes = calc_pi_modes_theo(s.dnu, eps_p1, s.freq_minmax_to_Fit)
@@ -3518,7 +3343,6 @@ class Star():
                 y_psd_to_fit = s.y_psd_noisy
             else:
                 y_psd_to_fit = y_psd
-
             
             if s.MCMC_or_dynesty:
                 return -neg_log_likelihood_X22dof(x=x_freq, y=y_psd_to_fit, y_fit=y_fit) 
@@ -3528,6 +3352,7 @@ class Star():
         minimizer_options = {"method": "L-BFGS-B"
                             ,"options": {"ftol": 1e-14, "gtol": 1e-12, "maxiter": 5000}}
         
+        s.idx_for_circular_parameters=np.where(np.isin(labels, ['ε_g','φ_p','φ_g']))[0]
         ndim = len(p0)
         if s.MCMC_or_dynesty:
             if s.MCMC_or_dynesty=='MCMC':
@@ -3555,7 +3380,10 @@ class Star():
                         v[i] = low + u[i] * (high - low)
                     return v
                 
-                sampler = dynesty.DynamicNestedSampler(_to_minimize, prior_transform, ndim=ndim,nlive = 2000)
+                thin=10
+                nlive=2000 #!!!
+                sampler = dynesty.DynamicNestedSampler(_to_minimize, prior_transform, ndim=ndim,nlive = nlive
+                                                       ,periodic=s.idx_for_circular_parameters)
                 sampler.run_nested()#dlogz=0.1) #!!!
             
                 res = sampler.results
@@ -3570,10 +3398,8 @@ class Star():
             # corner.corner(s.template_result_sample,weights=s.template_result_weights,labels=labels
             #              ,quantiles=[0.16, 0.5, 0.84],show_titles=True,title_fmt=".3f")
             
-            s.idx_for_circular_parameters=np.where(np.isin(labels, ['ε_g']))[0]#, 'φ_p','φ_g']))[0]
-            
             try:
-                results,uncertainties=s.plot_fit_template_corner(plot=False)
+                results,uncertainties=s.plot_fit_template_corner(plot=False,thin=thin)
             except:
                 s.save(filename=s.starname+'_failed.npz')
                 return
@@ -3759,40 +3585,34 @@ class Star():
                 ax.plot(x_fit,template_scaled(x_fit)*s.y_to_scale)
                 
         ## poster 
+        if False:
+            darkblue=(21,23,65)
+            orange=(250,135,48)
+            lightblue=(116, 184, 213)
+            blue= (70, 131, 249)
+            
+            darkblue=RGB_to_hex(darkblue)
+            orange=RGB_to_hex(orange)
+            lightblue=RGB_to_hex(lightblue)
+            blue=RGB_to_hex(blue)
+            
+            plt.figure(figsize=(15,5))
+            ax=plt.gca()
+            # ax.set_xlim(33,57)
+            # ax.set_ylim(400,40000)
+            template=s.generate_template(inflateFWHM=s.inflateFWHM,plot=False)
+    
+            ax.plot(s.freq,s.psd+s.Bkg_func(s.freq),color=darkblue,alpha=1,zorder=-10,label='PSD')
+            ax.plot(s.freq_sm,s.psd_sm+s.Bkg_func(s.freq_sm),color=orange,alpha=1,zorder=-10,label='smoothed PSD',lw=2)
         
-        darkblue=(21,23,65)
-        orange=(250,135,48)
-        lightblue=(116, 184, 213)
-        blue= (70, 131, 249)
-        
-        darkblue=RGB_to_hex(darkblue)
-        orange=RGB_to_hex(orange)
-        lightblue=RGB_to_hex(lightblue)
-        blue=RGB_to_hex(blue)
-        
-        plt.figure(figsize=(15,5))
-        ax=plt.gca()
-        # ax.set_xlim(33,57)
-        # ax.set_ylim(400,40000)
-        template=s.generate_template(inflateFWHM=s.inflateFWHM,plot=False)
-
-        ax.plot(s.freq,s.psd+s.Bkg_func(s.freq),color=darkblue,alpha=1,zorder=-10,label='PSD')
-        ax.plot(s.freq_sm,s.psd_sm+s.Bkg_func(s.freq_sm),color=orange,alpha=1,zorder=-10,label='smoothed PSD')
-        
-        x_fit=np.linspace(s.freq[0],s.freq[-1],int(1e5))
-        ax.plot(x_fit,template_scaled(x_fit)*s.y_to_scale,color='w',label='template fit')
-        
-        ax.legend(frameon=False)
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        
-        ax.set_xlabel('Frequency (μHz)')
-        
-        if s.discrete_orders:
-            for i_np in range(s.num_orders):
-                x_fit=np.linspace(*s.boarders_to_switch_to_next_order[i_np:i_np+2],10000)
-                template_scaled=s.generate_template(pi_modes=s.pi_modes_init[i_np], eps_g1=s.eps_g1[i_np], q=s.q[i_np],freq_minmax=s.boarders_to_switch_to_next_order[i_np:i_np+2],SaveToClass=False)
-                ax.plot(x_fit,template_scaled(x_fit)*s.y_to_scale)
+            x_fit=np.linspace(s.freq[0],s.freq[-1],int(1e5))
+            ax.plot(x_fit,template_scaled(x_fit)*s.y_to_scale,color='w',label='template fit')
+            
+            # ax.legend(frameon=False)
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+            
+            ax.set_xlabel('Frequency (μHz)')
     
     def fit_q(s):
 
@@ -3852,10 +3672,11 @@ class Star():
         ax.set_ylim(min(zeta)*s.dpi*0.97,s.dpi*1.01)
         
     def plot_fit_template_corner(s,plot=True,bins=30,thin=1):
-        sample=s.template_result_sample.T[::thin]
-        results,uncertainties=plot_cornerplot(s.template_result_sample.T,labels=s.cornerplot_labels,xi=None,L=s.template_result_weights,labelcbar='',mask=None, levels=[0.68, 0.95]
+        sample=s.template_result_sample.T[:,::thin]
+        weights=s.template_result_weights[::thin]
+        results,uncertainties=plot_cornerplot(sample,labels=s.cornerplot_labels,xi=None,L=weights,labelcbar='',mask=None, levels=[0.68, 0.95]
                        ,statistics_type=s.statistics_type,bins = bins,median_or_mode='mode'
-                       ,kde_2D_plot=False,idx_for_circular_parameters=s.idx_for_circular_parameters,plot=plot)
+                       ,kde_2D_plot=False,idx_for_circular_parameters=[s.idx_for_circular_parameters[0]],plot=plot) #!!!
             
         return results,uncertainties
     
@@ -3867,7 +3688,7 @@ class Echelle:
                  ,sqrt_psd=False,double=False,xaxis_offset=0.
                  
                  ,colorbar=False,cmap="Greys"
-                 ,lcolor=None,color_theo_modes='red',color_pigmodes=['cyan','violet']
+                 ,lcolor=None,color_theo_modes='red',color_pigmodes=['cyan','violet'],legend=False
                  ,amp_as_markersize=True,minmarkersize=20,markersize_pigmodes=50,resolution=200
                  
                  ,add_streched=False,dpi=100.,q=0.1,eps_p1=0.5,eps_g1=0.5
@@ -3897,6 +3718,7 @@ class Echelle:
             s.lcolor=lcolor
         es.color_pigmodes=color_pigmodes
         es.color_theo_modes=color_theo_modes
+        es.Emodes_legend=legend
         
         es.vMinMax=vMinMax
         es.add_streched=add_streched
@@ -3982,7 +3804,7 @@ class Echelle:
             
     def __getattr__(es, name):
         if name == "psd_no02":
-            return es.s.psd_sm
+            return s.psd_sm
         raise AttributeError(f"{name} not found")
         
         
@@ -4046,35 +3868,97 @@ class Echelle:
                 
         if es.double:
             ax.axvline(0,color='k',zorder=100)
+            double=2
+        else:
+            double=1
+        
+        x_mod  = x%(deltaX)   
+        idxs_newline,=np.where(sign*np.diff(x_mod%deltaX)<-0)
             
-        x_mod  = x%(deltaX)    
-        idxs_newline,=np.where(sign*np.diff(x_mod)<0)
+        num_lines=len(idxs_newline)-double+1
         
-        num_lines=len(idxs_newline)
         
-        x_interp= np.linspace(0,deltaX,n)
+        # plt.figure()
+        # plt.plot(x)
+        # for i in idxs_newline:
+        #     plt.axhline(x[i])
+        
+        # plt.figure()
+        # plt.plot(x % deltaX)
+        
+        x_interp= np.linspace(0,deltaX*double,n)
         n_interp_stepsize=np.median(np.diff(x_interp))
-        X       = np.linspace(0-n_interp_stepsize/2,deltaX+n_interp_stepsize/2,n+1)
+        X       = np.linspace(0-n_interp_stepsize/2,deltaX*double+n_interp_stepsize/2,n+1)
         Y       = np.zeros(num_lines+1)
         Z       = np.zeros([num_lines,len(x_interp)])
         
+        ##################
+        # plt.figure()
+        # ax_tot=plt.gca()
+        # ax_tot.plot(x,z,'k')
+        # for i in idxs_newline:
+        #     ax_tot.axvline(x[i])
+        
+        # plt.figure()
+        # ax_stacked=plt.gca()
+        
+        # plt.figure()
+        # ax_test=plt.gca()
+        ###################
         
         idx_start=0
         Y[0] = y[idx_start]
         for idx_line,idx_stop in enumerate(idxs_newline+1):
-            x_line=x[idx_start:idx_stop]
-            z_line=z[idx_start:idx_stop]
-            Z[idx_line,:]= np.interp(x_interp,(x_line%deltaX)[flip],z_line[flip])
+            if es.double and idx_line==num_lines:
+                continue
             
-            Y[idx_line+1] = y[idx_stop]
+            x_line=x[idx_start:idxs_newline[idx_line]+1]
+        
+            if es.double:
+                # x_line1=x_line
+                x_line2=x[idxs_newline[idx_line]+1:idxs_newline[idx_line+1]+1]
+                tostack=[x_line[flip]%(deltaX),x_line2[flip]%(deltaX)][flip]
+                tostack[1]=tostack[1]+deltaX
+                x_line=np.hstack(tostack)
+                # x_line_plot=np.hstack((x_line1[flip],x_line2[flip])[flip])
+            else:
+                # x_line_plot=x_line
+                x_line=x_line[flip]%(deltaX)
+                
+            z_line=z[idx_start:idxs_newline[idx_line+double-1]+1][flip]
+        
+            Z[idx_line,:]= np.interp(x_interp,x_line,z_line)
+            
+            Y[idx_line+1] = y[idxs_newline[idx_line]+1]
+            
+            #########################
+            # ax_tot.plot(x_line_plot,z_line,'--',lw=3)
+              
+            # ax_stacked.scatter((x_line),np.ones_like(x_line)*y[idxs_newline[idx_line+double-1]+1],c=z_line[flip]) 
+            # ax_stacked.plot((x_line),np.linspace(Y[idx_line],Y[idx_line+1],len(x_line)),'o-',ms=1) 
+            ######################
             
             idx_start=idx_stop
         
         es.cm_echelle = ax.pcolormesh(X,Y,Z,shading='flat',cmap=es.cmap,zorder=-100,vmin=es.vMinMax[0],vmax=es.vMinMax[1])
-        if es.double:
-            ax.pcolormesh(X-deltaX,Y+s.dnu,Z,shading='flat',cmap=es.cmap,zorder=-100,vmin=es.vMinMax[0],vmax=es.vMinMax[1])
+        # if es.double:
+        #     ax.pcolormesh(X-deltaX,Y+s.dnu,Z,shading='flat',cmap=es.cmap,zorder=-100,vmin=es.vMinMax[0],vmax=es.vMinMax[1])
         
-        ax.set_xlim([(-s.xaxis_offset-deltaX*int(not bool(s.xaxis_offset)))*es.double ,  deltaX-s.xaxis_offset])
+        # ax.set_xlim([(-s.xaxis_offset-deltaX*int(not bool(s.xaxis_offset)))*es.double ,  deltaX-s.xaxis_offset])
+        
+        offset=0
+        if es.double and not s.xaxis_offset==0:
+            if echelle_type=='streched period':
+                if s.buoyancy_glitch and s.glitch_type=='gaussian' and hasattr(s, 'mixed_modes_theo'):
+                    center,_=circular_mean(1e6/s.mixed_modes_theo%deltaX/deltaX)
+                else:
+                    center=np.mean(s.eps_g1)
+                offset=(center-0.5)%1*deltaX
+            else:
+                offset=s.xaxis_offset/s.dnu*deltaX
+            double=1
+               
+        ax.set_xlim(offset,  deltaX*double+offset)
         ax.set_ylim(s.fminmax[0],s.fminmax[1])
     
     def Emodes(es,echelle_type='',zorder=100,mew=None
@@ -4082,7 +3966,7 @@ class Echelle:
                       ,color=False,marker=False,plot=True
                       ,deltaX=False,ax=False
                       ,save_streched_modes=False,plot_errorbars=True
-                      ,legend=False):
+                      ,legend=False,label=False):
         s=es.s
         if isinstance(modes,bool):
             modes=s.modes
@@ -4093,7 +3977,7 @@ class Echelle:
         if not color:
             color=s.lcolor
         if not marker:
-            marker=s.lmarker
+            marker=s.lmarker 
         
         if amp_as_markersize is None:
             amp_as_markersize=es.amp_as_markersize
@@ -4170,21 +4054,31 @@ class Echelle:
             if len(modes[l])==0:
                 continue
             
+            if not label:
+                labell=f'l = {s.lList[l]}'
+            else:
+                labell=label
             if es.paper_format and l==1:
                 markersize+=40
+                
+            if es.double and echelle_type=='frequency':
+                n=modes[l]//s.dnu
+                y_modes=(n+0.5)*s.dnu
+            else:
+                y_modes=modes[l]
             
-            ax.scatter(xmodes[l] % deltaX,modes[l],s=markersize[l],marker=marker[l],color='k',facecolor=color[l],zorder=zorder,linewidths=mew,label=f'l = {s.lList[l]}')
+            ax.scatter(xmodes[l] % deltaX,y_modes,s=markersize[l],marker=marker[l],color='k',facecolor=color[l],zorder=zorder,linewidths=mew,label=labell)
             # ax.plot(xmodes[l] % deltaX,modes[l],color=color[l],zorder=zorder)
             if legend:
-                ax.legend(ncol=len(modes[l]))#,bbox_to_anchor=(0.04, 1))
+                ax.legend(loc='upper center',ncol=len(modes[l]),facecolor='lightgray', framealpha=0.5, edgecolor=None)#,bbox_to_anchor=(0.04, 1))
             
             if echelle_type == 'frequency' and plot_errorbars:
-                ax.errorbar(xmodes[l] % deltaX,modes[l],xerr=s.modes_sig[l],ecolor=color[l],zorder=zorder-1,ls='None',ms=0,capsize=5,barsabove=True)
+                ax.errorbar(xmodes[l] % deltaX,y_modes,xerr=s.modes_sig[l],ecolor=color[l],zorder=zorder-1,ls='None',ms=0,capsize=5,barsabove=True)
                
             if es.double:
-                ax.scatter(xmodes[l] % deltaX-deltaX,modes[l]+s.dnu,s=markersize[l],marker=marker[l],color='k',facecolor=color[l],zorder=zorder,linewidths=mew)
+                ax.scatter(xmodes[l] % deltaX+deltaX,y_modes-s.dnu*(echelle_type=='frequency'),s=markersize[l],marker=marker[l],color='k',facecolor=color[l],zorder=zorder,linewidths=mew)
                 if echelle_type == 'frequency' and plot_errorbars:
-                    ax.errorbar(xmodes[l] % deltaX,modes[l],xerr=s.modes_sig[l],ecolor=color[l],zorder=zorder-1,ls='None',ms=0,capsize=5,barsabove=True)
+                    ax.errorbar(xmodes[l] % deltaX+deltaX,y_modes-s.dnu*(echelle_type=='frequency'),xerr=s.modes_sig[l],ecolor=color[l],zorder=zorder-1,ls='None',ms=0,capsize=5,barsabove=True)
                  
     #%%% interactive
     def redraw(es):
@@ -4206,7 +4100,7 @@ class Echelle:
         es.echelle_cm(echelle_type='frequency')
         
         if hasattr(s, 'modes'):
-            es.Emodes(echelle_type='frequency',plot_errorbars=not es.paper_format)
+            es.Emodes(echelle_type='frequency',plot_errorbars=not es.paper_format,legend=es.Emodes_legend)
             
         if es.add_streched:
             for lines in (list(es.ax_strechedPeriod.collections) +list(es.ax_strechedPeriod.lines) 
@@ -4249,7 +4143,9 @@ class Echelle:
                     
                 es.Emodes(modes=s.pi_modes_init,amp_as_markersize=es.markersize_pigmodes,color=color_pi_modes_init,marker='o')
                 if not hasattr(s, 'modes1') and not es.estimate_eps_using_modes1:
-                    es.ax_strechedFreq.scatter(s.pi_modes_init%s.dnu, s.pi_modes_init, color=es.color_pigmodes[0],ec='k',s=es.markersize_pigmodes,zorder=90,marker='o',ls='None')
+                    es.ax_strechedFreq.scatter(s.pi_modes_init%s.dnu, s.pi_modes_init, color=es.color_pigmodes[0],ec='k',s=es.markersize_pigmodes,zorder=90,marker='o',ls='None',label='l=1 (π modes)')
+                    if es.Emodes_legend:
+                        es.ax_strechedFreq.legend(loc='upper center',facecolor='lightgray', framealpha=0.5, edgecolor=None)
                     
             es.echelle_cm(echelle_type='streched period')
             if hasattr(s, 'modes') and not es.paper_format:
@@ -4305,13 +4201,19 @@ class Echelle:
                 es.plot_dtau_rot()
              
         if es.add_streched:
-            if not es.frequency_dependent_eps_q and not es.paper_format:
+            if (not es.frequency_dependent_eps_q or not isinstance(s.eps_p1_init,(np.ndarray))) and not es.paper_format:
                 es.ax_echelle.axvline(np.mean(s.eps_p1_init)*s.dnu,color='lightblue')
-            elif not isinstance(s.eps_p1_init,(np.ndarray)) and not es.paper_format:
-                es.ax_echelle.axvline(s.eps_p1_init*s.dnu,color='lightblue')
-                
+                if es.double:
+                    es.ax_echelle.axvline(np.mean(s.eps_p1_init)*s.dnu+s.dnu,color='lightblue')
+            # elif not isinstance(s.eps_p1_init,(np.ndarray)) and not es.paper_format:
+            #     es.ax_echelle.axvline(s.eps_p1_init*s.dnu,color='lightblue')
+            #     if es.double:
+            #         es.ax_echelle.axvline(s.eps_p1_init*s.dnu+s.dnu,color='lightblue')
+                    
             if not es.frequency_dependent_eps_q or (not hasattr(s,'modes1') and not isinstance(s.eps_g1, np.ndarray)) and not es.paper_format:
                 es.ax_strechedPeriod.axvline(np.mean(s.eps_g1)*s.dpi,color='pink')
+                if es.double:
+                    es.ax_strechedPeriod.axvline(np.mean(s.eps_g1)*s.dpi+s.dpi,color='pink')
     
         if (s.buoyancy_glitch or s.acoustic_glitch) and es.frequency_dependent_eps_q and hasattr(s,'mixed_modes_theo') or es.keep_ploting_theo_modes:
             es.plot_theo_modes()
@@ -4987,7 +4889,7 @@ class Echelle:
                           ,color=es.color_theo_modes,marker='x',plot_errorbars=False,zorder=10)
         if es.plot_streched_theo_modes:
             es.Emodes(echelle_type='streched period',modes=s.mixed_modes_theo,amp_as_markersize=False
-                              ,color=es.color_theo_modes,marker='x',zorder=10)
+                              ,color=es.color_theo_modes,marker='x',zorder=10,label='l=1 (template)',legend=es.Emodes_legend)
             es.Emodes(echelle_type='streched frequency',modes=s.mixed_modes_theo,amp_as_markersize=False
                               ,color=es.color_theo_modes,marker='x',zorder=10)
             
@@ -5812,162 +5714,6 @@ class mixed_modes_Fit():
         
 #%%
 ########################################################################################################
-
-
-if __name__ == "__main__" and True:
-    import time
-    
-    q = .1
-    Δν = 10
-    ΔΠ = 49.571 / 1e6
-    νp = Δν * (np.arange(8, 13) + 1/2 + 1/4)
-    νg = 1 / (ΔΠ * (np.arange(150, 250) + 1/4))[::-1]
-    
-    q  = 0.1
-    # q=np.array([0.1,0.2,0.1,0.3,0.1])
-    Δν = 4.626
-    ΔΠ = 331 / 1e6
-    # νp = Δν * (np.arange(1, 13) + 1/2 + 1/4)
-    νp = np.array([35.152974, 39.566178, 44.280072, 48.89682 , 53.54595 ])
-    νp = (νp//Δν + 0.55)*Δν
-    νg = 1 / (ΔΠ * (np.arange(50, 100) + 1/4))[::-1]
-    
-    ng=np.arange(50, 100)
-    eps_g1=np.array([0.26180112, 0.29460783, 0.28061779, 0.2553997, 0.28740846])
-    
-    print(f"N = {Δν / (np.median(νp)**2 * ΔΠ):.2f}")
-    freq=np.linspace(34,56,1000)
-
-    ng_approx=1/νp //ΔΠ
-    ng_min=min(ng_approx)
-    ng_max=max(ng_approx)
-        
-
-    ng_tol=int(abs(np.median( np.diff(1/(νp)) )/ΔΠ))
-    ng = np.arange(ng_max+ng_tol,ng_min-ng_tol+2,-1)
-    # ng = np.arange(ng_min-ng_tol,ng_max+ng_tol)
-    
-    eps_g1=np.interp(ng, ng_approx[::-1], eps_g1[::-1])
-    eps_g1=0.26
-    
-    eps_p1=νp%Δν/Δν
-    eps_p1_func=interp1d(νp,eps_p1,'nearest',bounds_error=False,fill_value=(eps_p1[0],eps_p1[-1]))
-    
-        
-    νg=1/((eps_g1+ng)*ΔΠ)
-    
-        
-    # mixed_p_mode, mixed_g_modes = couple_halley(pi_modes, gamma_modes, q, dpi_Ms, dnu, maxiter=s.maxiter_halley,interp_kind=s.interp_kind)
-    # mixed_modes=np.sort(np.append(mixed_p_mode,mixed_g_modes))
-    
-    buoyancy_glitch=True
-    streched_period=True
-
-    if streched_period:
-        axe,axp,axsp=generate_subplot_grid((1,3),wspace=0.0,share_y=True)
-    else:
-        axe,axp=generate_subplot_grid((1,2),wspace=0.2)
-    
-    for νpi in νp:
-        # axe.axhline(νpi, ls='dashed', c='gray')
-        axp.axhline( νpi, ls='dashed', c='gray')
-        axsp.axhline(νpi, ls='dashed', c='gray')
-        
-    axp.plot((1/νp % ΔΠ)*1e6, νp, '^', c='blue',label='π-modes')
-    axp.plot((1/νg % ΔΠ)*1e6, νg, '.', c='red',label='γ-modes')
-    
-    axe.plot(νp % Δν, νp, '^', c='blue')
-    axe.plot(νg % Δν, νg, '.', c='red',ms=5)
-    
-    for i, maxiter in enumerate([10]):
-        t0 = time.perf_counter()
-        
-        νmp, νmg = couple_halley(νp, νg, q, dpi_Ms=ΔΠ, dnu=Δν, maxiter=maxiter, damp=0.5,tol=1e-8, buoyancy_glitch=buoyancy_glitch,A=1.9, omega_g=2000, phi=0.1*np.pi,interp_kind=interp_kind)
-            
-        # νmp, νmg = fitter.couple_halley(νp, νg, q)
-        
-        pmp_streched= calc_streched_period(νmp,eps_p1=eps_p1_func(νmp),q=q,dnu=Δν,dpi=ΔΠ*1e6)
-        pmg_streched= calc_streched_period(νmg,eps_p1=eps_p1_func(νmg),q=q,dnu=Δν,dpi=ΔΠ*1e6)
-        
-        t1 = time.perf_counter()
-        avg = (t1 - t0)
-        
-        axp.plot((1/νmp % ΔΠ)*1e6, νmp, 'v',mec='k',color='None',label='p-dominant mixed mode')# c=f"C{i}")
-        axp.plot((1/νmg % ΔΠ)*1e6, νmg, 'o',mec='k',color='None',label='g-dominant mixed mode',ms=5)# c=f"C{i}")
-        
-        axe.plot(νmp % Δν, νmp, 'v',mec='k',color='None')# c=f"C{i}")
-        axe.plot(νmg % Δν, νmg, 'o',mec='k',color='None',ms=5)# c=f"C{i}")
-        
-        if buoyancy_glitch:
-            axsp.plot(pmp_streched*1e-6 % ΔΠ*1e6, 1/pmp_streched*1e6, 'v',mec='k',color='None',label='p-dominant mixed mode')# c=f"C{i}")
-            axsp.plot(pmg_streched*1e-6 % ΔΠ*1e6, 1/pmg_streched*1e6, 'o',mec='k',color='None',label='g-dominant mixed mode',ms=5)# c=f"C{i}")
-            
-        print(f" {avg:.6f} s")
-        
-    
-    axp.set_xlim(0,ΔΠ*1e6)
-    axsp.set_xlim(0,ΔΠ*1e6)
-    axe.set_xlim(-0.05930353333396576, 4.431937102330043)
-    axp.set_ylim(31.493670022446004, 59.031360848387415)
-    axsp.set_ylim(31.493670022446004, 59.031360848387415)
-    axe.set_ylim(31.493670022446004, 59.031360848387415)
-    
-    axe.set_xlabel("ν mod Δν")
-    axe.set_ylabel("ν")
-    
-    axp.set_xlabel("1/ν mod ΔΠ")
-    # axp.set_ylabel("ν")
-    
-    axsp.set_xlabel("τ mod ΔΠ")
-    # axsp.set_ylabel("ν")
-
-    axp.legend(loc='upper right')
-    
-    axe.set_title('frequency échelle')
-    axp.set_title('period échelle')
-    axsp.set_title('streched period échelle')
-    
-    
-    plt.figure()
-    ax=plt.gca()
-    mixed=np.sort(np.append(νmp, νmg))
-    means=[(mixed[i] + mixed[i+1]) / 2 for i in range(len(mixed)-1)]
-    ax.plot(means,np.abs(np.diff(1/mixed*1e6)),'o-')
-    ax.axhline(ΔΠ*1e6)
-    ax.set_xlabel('ν (μHz)')
-    ax.set_ylabel('ΔΠ (s)')
-    
-    zeta=calc_ζp(mixed, νp, q, ΔΠ, Δν,interp_kind=interp_kind)
-    
-    plt.figure()
-    ax=plt.gca()
-    ax.plot(mixed,zeta,'ko')
-    
-    freq=np.linspace(mixed[0],mixed[-1],1000)
-    zeta=calc_ζp(freq, νp, q, ΔΠ, Δν,interp_kind=interp_kind)
-    ax.plot(freq,zeta,'r',zorder=-2)
-    
-    ax.set_xlabel('ν (μHz)')
-    ax.set_ylabel('ζ$_p$')
-    
-    
-    
-    
-    
-
-
-    
-    
-    
-    
-
-
-
-
-
-
-
-
 
 
 

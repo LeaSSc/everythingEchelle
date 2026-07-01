@@ -339,12 +339,12 @@ def plot_cornerplot(parameters,labels,xi=None,L=None,labelcbar='',mask=None
         
         if plot:
             x = np.linspace(samples.min(), samples.max(), 10000)
-            y_kde=kde(x)
+            y_kde=kde.evaluate(x)
             y_scaled = y_kde * hist_area
             axes[idx_xax][idx_yax].plot(x, y_scaled , color='r')
             
-            axes[idx_xax][idx_yax].axvline(uncertainty[0],color='lightgrey',ls=':')
-            axes[idx_xax][idx_yax].axvline(uncertainty[1],color='lightgrey',ls=':')
+            axes[idx_xax][idx_yax].axvline(result-uncertainty[0],color='lightgrey',ls=':')
+            axes[idx_xax][idx_yax].axvline(result+uncertainty[1],color='lightgrey',ls=':')
             axes[idx_xax][idx_yax].axvline(result   ,color='red'      ,ls=':')
             axes[idx_xax][idx_yax].axvline(median     ,color='k'        ,ls='--')
             
@@ -360,7 +360,7 @@ def plot_cornerplot(parameters,labels,xi=None,L=None,labelcbar='',mask=None
         axes[num][num].tick_params(labelleft=False,left=False,labelbottom=True,bottom=True,right=True)
         axes[num][num].set_xlabel(labels[-1])
         axes[num][num].tick_params(axis='x',rotation=30)
-
+        # axes[num][num].set_xlim(np.min(samples),np.max(samples))
                 
         if not plot_pdf:
             plt.colorbar(p,extend='max',cax=ax_cbar)
@@ -862,7 +862,7 @@ class Fitter():
                 self.result_polished=result_minimize.x
         
         else:
-            
+            #######################################################################
             if self.niterations_for_fit:
                 niterations_for_fit=self.niterations_for_fit+1
             else:
