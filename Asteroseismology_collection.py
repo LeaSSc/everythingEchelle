@@ -5,7 +5,7 @@ import os#, sys.math, glob
 try:
     import pandas as pd
 except:
-    print()  
+    print('no pandas')  
 
 # import jax.numpy as jnp
 
@@ -49,7 +49,11 @@ from matplotlib.widgets import TextBox, Button
 # from uncertainties import ufloat, unumpy
 # from uncertainties.umath import sqrt, log10 
 
-import emcee
+try:
+    import emcee
+except:
+    print('no emcee')
+
 # import corner
 import dynesty
 # from dynesty import utils as dyfunc
@@ -709,8 +713,9 @@ def plot_lightcurve(time=False,flux=False,axlc=False,JD=2400000
 
     #%%% PSD
         #%%%% plot
-def plot_PSD(freq=False,psd=False,axPSD=False,nu_max=False,zoom=False,flip=False,
-             logaxis=False,psdColor='k',color_modes=['limegreen','dodgerblue',(255/256,171/256,53/256),'orange'],color_nu_max_line='grey',modes=False,label=None
+def plot_PSD(freq=False,psd=False,axPSD=False,nu_max=False,dnu=False
+            ,zoom=False,dnufactor=4,flip=False
+            ,logaxis=False,psdColor='k',color_modes=['limegreen','dodgerblue',(255/256,171/256,53/256),'orange'],color_nu_max_line='grey',modes=False,label=None
             ,alpha=1,**kwargs):
     
     if modes and not isinstance(modes[0],(list,np.ndarray)):
@@ -750,7 +755,10 @@ def plot_PSD(freq=False,psd=False,axPSD=False,nu_max=False,zoom=False,flip=False
                 axPSD.axhline(nu_m,color=color_nu_max_line,alpha=0.5)
               
         if zoom:
-            zoom = nu_m*zoom
+            if not dnufactor or not dnu:
+                zoom = nu_m*zoom
+            else:
+                zoom = dnu*dnufactor
             mask = (freq>(nu_m-zoom)) & (freq<(nu_m+zoom))
             maxPSD = max(psd[mask])
             
@@ -818,7 +826,9 @@ def get_nyqist_freq(t,t_in_sec=False,return_in_muHz=True):
         nyq_freq=nyq_freq*1e6
     return nyq_freq
 
-def calc_lomb_scargle(t,y,oversample=1,amplitude=False,method="fast",nyq_freq=False,max_freq=10000,time_in_sec=False,return_in_ppm=True):
+def calc_lomb_scargle(t,y,oversample=1,amplitude=False,method="fast"
+                     ,nyq_freq=False,max_freq=10000,spectralWindow=False
+                     ,time_in_sec=False,return_in_ppm=True):
     
     if not time_in_sec:
         t=t*(24*60*60)
@@ -826,7 +836,11 @@ def calc_lomb_scargle(t,y,oversample=1,amplitude=False,method="fast",nyq_freq=Fa
     t,y = remove_nan(t,y)
     
     df = 1.0 / (t[-1] - t[0])
-    fmin = df  
+    
+    if spectralWindow:
+        fmin = df / oversample 
+    else:
+        fmin=df 
     
     if isinstance(nyq_freq, bool):
         nyq_freq=get_nyqist_freq(t,t_in_sec=True,return_in_muHz=False)
@@ -834,7 +848,7 @@ def calc_lomb_scargle(t,y,oversample=1,amplitude=False,method="fast",nyq_freq=Fa
     max_freq=min([nyq_freq,max_freq*1e-6])
     
     freq = np.arange(fmin, max_freq, df / oversample)
-    model = LombScargle(t, y)
+    model = LombScargle(t, y, center_data=not spectralWindow, fit_mean=not spectralWindow)
     
     sc = model.power(freq, method=method, normalization="psd")
     
@@ -930,10 +944,12 @@ class asympthotic_theory(): # consider jax # use functools.partial?
         self.gamma_min=np.min(self.gamma_modes)
         self.gamma_max=np.max(self.gamma_modes)
         
-        self.gamma_modes_period=np.sort(1/self.gamma_modes)
+        if not gamma_modes is None:
+            self.gamma_modes_period=np.sort(1/self.gamma_modes)
+            self.n_g = np.arange(len(self.gamma_modes))
         
-        self.n_p = np.arange(len(self.pi_modes))
-        self.n_g = np.arange(len(self.gamma_modes))
+        if not pi_modes is None:
+            self.n_p = np.arange(len(self.pi_modes))
         
         if isinstance(q,(np.ndarray,list)):
             self.q_func=interp1d(self.pi_modes,self.q,kind='nearest',bounds_error=False,fill_value=(self.q[0],self.q[-1]))
@@ -1414,7 +1430,7 @@ class Star():
                   ,lList=[0,2,1],lcolor=['limegreen','dodgerblue',(255/256,171/256,53/256)],lmarker = ['D','o','^','o']
                   ,dnu_rot=False
                   ,star_directory='./Stars/'
-                  ,inflateFWHM=False,MCMC_or_dynesty=False,minimizer='minimize',discrete_orders=False,iterations_for_fit=False, fit_dpi=False
+                  ,inflateFWHM=False,MCMC_or_dynesty=False,minimizer='minimize',discrete_orders=False,iterations_for_fit=False, fit_dpi=False, constant_q=False
                   
                   ,buoyancy_glitch=False,A_g_glitch=2,omega_g_glitch=1000,phi_g_glitch=0.,Delta_g_glitch=0
                   ,acoustic_glitch=False,A_p_glitch=2,tau_p_glitch=1000  ,phi_p_glitch=0.,b_p_glitch=0
@@ -1439,6 +1455,8 @@ class Star():
         s._discrete_orders=discrete_orders
         s.iterations_for_fit=iterations_for_fit
         
+        s.constant_q=constant_q
+        
         s.buoyancy_glitch=buoyancy_glitch
 
         s.A_g_glitch=A_g_glitch
@@ -1454,6 +1472,7 @@ class Star():
         s.b_p_glitch=b_p_glitch
         
         s.fit_dpi=fit_dpi
+        s.dpi_bounds=False
         s.use_pre_fitted_l1_modes=use_pre_fitted_l1_modes
         
         if (acoustic_glitch or buoyancy_glitch) and discrete_orders:
@@ -1508,6 +1527,8 @@ class Star():
             s.fit_n_dependent_dpi=False
         
     def __getattr__(s, name):
+        if name == "numax_all":
+            return [s.numax]
         if name == "freq_sm":
             return s.freq_full
         if name == "psd_sm":
@@ -1758,7 +1779,7 @@ class Star():
         if not hasattr(s,'f_nyq'):
             s.f_nyq=get_nyqist_freq(s.time)
             
-        s.freq_full,s.psd_full,numax = s.remove_Background(freq=s.freq_raw,psd=s.psd_raw
+        s.freq_full,s.psd_full,s.numax_all = s.remove_Background(freq=s.freq_raw,psd=s.psd_raw
                                ,plot=plot,axPSD=ax_PSD_log,legend=False
                                ,highpassfiltered=True,return_amp=False
                                ,initial_guess_numax=initial_guess_numax
@@ -1766,10 +1787,14 @@ class Star():
                                # ,bounds=(0,np.inf)
                                )
         
-        dnu=[0]*len(numax)
-        for ABi in range(len(numax)):
-            dnu[ABi]=s.get_dnu(numax=numax[ABi],ax_dnu=ax_dnu[ABi],plot=plot,smooth_stddev=smooth_stddev_dnucorr)#,interactive=True)
-
+        dnu=[0]*len(s.numax_all)
+        for ABi in range(len(s.numax_all)):
+            try:
+                dnu[ABi]=s.get_dnu(numax=s.numax_all[ABi],ax_dnu=ax_dnu[ABi],plot=plot,smooth_stddev=smooth_stddev_dnucorr)#,interactive=True)
+            except:
+                print('no dnu found')
+                dnu[ABi]=np.nan
+                return s
         # psd_noise_low=s.psd_full[(s.freq_full>max(numax)+6*max(dnu))&(s.freq_full<max(numax)+7*max(dnu))]
         # psd_noise_high=s.psd_full[(s.freq_full<min(numax)-6*min(dnu))&(s.freq_full>min(numax)-8*min(dnu))]
         
@@ -1779,14 +1804,14 @@ class Star():
         
         if plot:
             # ax_PSD_log.set_xlim(3,284)
-            for ABi in range(len(numax)):
+            for ABi in range(len(s.numax_all)):
                 s.dnu=dnu[ABi]
-                s.numax=numax[ABi]
+                s.numax=s.numax_all[ABi]
                 s.smooth()
                
                 plot_PSD(s.freq_full, s.psd_full, axPSD=ax_PSD[ABi],logaxis=False)
-                ax_PSD[ABi].set_xlim(numax[ABi]-s.dnufactor*dnu[ABi],numax[ABi]+s.dnufactor*dnu[ABi])
-                peak_amp=np.max(s.psd_full[(s.freq_full>numax[ABi]-s.dnufactor*dnu[ABi]) & (s.freq_full<numax[ABi]+s.dnufactor*dnu[ABi])])
+                ax_PSD[ABi].set_xlim(s.numax_all[ABi]-s.dnufactor*dnu[ABi],s.numax_all[ABi]+s.dnufactor*dnu[ABi])
+                peak_amp=np.max(s.psd_full[(s.freq_full>s.numax_all[ABi]-s.dnufactor*dnu[ABi]) & (s.freq_full<s.numax_all[ABi]+s.dnufactor*dnu[ABi])])
                 ax_PSD[ABi].set_ylim(0-peak_amp*0.05,peak_amp*1.05)
                 
                 s.echelle(ax_echelle=ax_Echelle[ABi],double=False)
@@ -1794,12 +1819,12 @@ class Star():
                 
         if not isinstance(AB,bool):
             s.dnu=dnu[AB]
-            s.numax=numax[AB]
+            s.numax=s.numax_all[AB]
             s.smooth()
             
         else:
             s.dnu=dnu[0]
-            s.numax=numax[0]
+            s.numax=s.numax_all[0]
             
         if not isinstance(s.psd_full,bool):
             s.freq,s.psd=s.set_fminmax(freq=s.freq_full,psd=s.psd_full,fminmax=s.fminmax)
@@ -1910,8 +1935,11 @@ class Star():
         psd=psd/psd_to_scale
         
         if highpassfiltered: 
-            bin_freq_mask=bin_freq[bin_freq>s.HPF_width_microhertz] 
-            bin_psd_mask=bin_psd[bin_freq>s.HPF_width_microhertz]
+            s.freq_toFitB=bin_freq[bin_freq>s.HPF_width_microhertz] 
+            s.psd_toFitB =bin_psd[bin_freq>s.HPF_width_microhertz]
+        else:
+            s.freq_toFitB=bin_freq
+            s.psd_toFitB =bin_psd
     
         background_to_fit=s.create_PSD_background_fct(num_gauss=num_gauss,num_harvey=num_harvey,exponent_harvey=exponent_harvey,Xi_harvey=False,return_sep=False)
         
@@ -1932,7 +1960,7 @@ class Star():
                                                np.mean(bin_psd[(bin_freq>initial_guess_numax[AB]*0.8) & (bin_freq<initial_guess_numax[AB]*1.2)])
                                                )
             #harvey
-            initial_guess_amp_harvey      = [np.median(bin_psd_mask[:1000])
+            initial_guess_amp_harvey      = [np.median(s.psd_toFitB[:1000])
                                              ,np.mean(bin_psd[(bin_freq>initial_guess_numax[AB]*0.8) & (bin_freq<initial_guess_numax[AB]*1.2)])
                                              ,np.mean(bin_psd[(bin_freq>initial_guess_numax[AB]*0.8) & (bin_freq<initial_guess_numax[AB]*1.2)])
                                              ][:num_harvey] * np.array([1, 1, 0.5])[:num_harvey]
@@ -1997,11 +2025,11 @@ class Star():
             bounds = list(zip(bounds[0], bounds[1]))
         
         if s.minimizer=='minimize':
-            result = minimize(fun=neg_log_likelihood_X22dof,args=(bin_freq_mask, bin_psd_mask, background_to_fit)
+            result = minimize(fun=neg_log_likelihood_X22dof,args=(s.freq_toFitB, s.psd_toFitB, background_to_fit)
                              ,bounds=bounds,x0=initial_guess,method='L-BFGS-B' )
         elif s.minimizer=='differential_evolution':
-            result = differential_evolution(neg_log_likelihood_X22dof,args=(bin_freq_mask, bin_psd_mask, background_to_fit)
-                             ,bounds=bounds,maxiter=1000000,popsize=200)
+            result = differential_evolution(neg_log_likelihood_X22dof,args=(s.freq_toFitB, s.psd_toFitB, background_to_fit)
+                             ,bounds=bounds,maxiter=1000000,popsize=200,)
             print("background fit succeded: ",result.success)
         elif s.minimizer=='basinhopping':
             result = basinhopping(neg_log_likelihood_X22dof, initial_guess  #,minimizer_kwargs=minimizer_options
@@ -2016,99 +2044,35 @@ class Star():
         
         para_names = s.bkgparams2names(parameters,num_gauss=num_gauss,fit_exponent_harvey=isinstance(exponent_harvey,bool))
         if not isinstance(exponent_harvey,bool):
-            white_noise, amp_gauss,sig_gauss,numax, amp_harvey,char_freq_harvey = para_names
+            white_noise, amp_gauss,sig_gauss,numax_all, amp_harvey,char_freq_harvey = para_names
             remove_last_para=True
         else: 
-            white_noise, amp_gauss,sig_gauss,numax, amp_harvey,char_freq_harvey,exponent_harvey = para_names
+            white_noise, amp_gauss,sig_gauss,numax_all, amp_harvey,char_freq_harvey,exponent_harvey = para_names
             print("exponent = ",exponent_harvey)
             remove_last_para=False
             
             
         psd*=psd_to_scale
-        bin_psd*=psd_to_scale
-        bin_psd_mask*=psd_to_scale
+        s.psd_toFitB*=psd_to_scale
             
         white_noise*=psd_to_scale
         amp_gauss*=psd_to_scale
         amp_harvey*=psd_to_scale
         
-        bkg_parameters=np.concatenate((np.ravel(white_noise), np.ravel(amp_gauss),np.ravel(sig_gauss),np.ravel(numax), np.ravel(amp_harvey),np.ravel(char_freq_harvey),np.ravel(exponent_harvey)))
+        bkg_parameters=np.concatenate((np.ravel(white_noise), np.ravel(amp_gauss),np.ravel(sig_gauss),np.ravel(numax_all), np.ravel(amp_harvey),np.ravel(char_freq_harvey),np.ravel(exponent_harvey)))
         if remove_last_para:
             bkg_parameters=bkg_parameters[:-1]
             
         if SaveToClass:
-            s.bkg_parameters=bkg_parameters
+            s.bkg_parameters=bkg_parameters 
+            s.numax_all=numax_all
         
-        Bkg,G,H,R,white_noise=background_fit(bin_freq_mask,*bkg_parameters)
+        Bkg,G,H,R,white_noise=background_fit(s.freq_toFitB,*bkg_parameters)
             
         if plot:
-            if not ax:
-                plt.figure()
-                ax=plt.gca()
-                plt.tight_layout()
-                
-            ax.set_xscale('log')
-            ax.set_yscale('log')
-            
-            ax.set_xlabel('ν (μHz)')
-            ax.set_ylabel('PSD (ppm² μHz$^{-1}$)')
-                
-            powerpointblue= (36/259, 49/259, 88/259)
-            lightblue=(195/259,209/256,234/256)
-            darkblue=(8 /256,31/256,92/256)
-            colorpsd=lightblue
-            ax.plot(freq,psd,color=colorpsd,alpha=0.6)#'lightgrey')
-            ax.plot(bin_freq_mask,bin_psd_mask,'k')
-            
-            ax.plot(freq,psd,color='lightgrey',zorder=-5)
-                
-            color_numax='goldenrod'
-            color_numax=(255/256,161/256,17/256)
-            
-            ax.plot(bin_freq_mask,Bkg,label=r'P$_\mathrm{fit}$',color='red',zorder=20,linewidth=2)
-            ax.plot(bin_freq_mask,(Bkg-R*(np.sum(G,0))),':',color='red',zorder=20,linewidth=2,label=r'P$_\mathrm{bkg}$')
-    
-            ax.plot(bin_freq_mask,np.ones_like(bin_freq_mask)*white_noise,'--',label='W',color='orange')#'aquamarine')
-            
-            colorhi=['darkblue','blue','royalblue']
-            for hi in range(num_harvey):  
-                H = s.Harvey(bin_freq_mask,amp_harvey[hi],char_freq_harvey[hi],exponent=exponent_harvey)
-                ax.plot(bin_freq_mask,H,'--',label=r'H$_{}$'.format(hi),color=colorhi[hi])
-                
-            colorgi=['hotpink','fuchsia']
-            for gi in range(num_gauss):  
-                G = s.Gauss(bin_freq_mask,amp_gauss[gi],sig_gauss[gi],numax[gi])
-                ax.plot(bin_freq_mask,G,'--',label=r'G$_{}$'.format(gi),color=colorgi[gi])
-                
-            for numaxi in numax:
-                ax.axvline(numaxi,color=color_numax,alpha=0.7,linestyle='-')
-                ax.text(numaxi*1.1,np.max(s.psd_raw)*0.5,'ν$_{{max}}$ = {:.2f} μHz'.format(numaxi))#,transform=ax.transAxes)
-            # ax.plot(bin_freq,B0,'--',label=r'B$_0$',color='darkblue')
-            # if not simple_fit:
-            #     ax.plot(bin_freq,B1,'--',label=r'B$_1$',color='blue')
-            # if not used_highpassfilter:
-            #     ax.plot(bin_freq,B2,'--',label=r'B$_2$',color='royalblue')
-            
-            # ax.plot(bin_freq,G,'-.',label=r'G$_A$',color='hotpink')
+            s.plot_backgroundfit(ax=ax)
         
-            # ax.axvline(nu_max_B,color=color_numax,alpha=0.7,linestyle='-')
-            
-            # ax.axhline(parameters[5],color=color_numax,alpha=0.7,linestyle='-')
-            # ax.axhline(parameters[7],color=color_numax,alpha=0.7,linestyle='-')
-    
-            if highpassfiltered:
-                xmin=s.HPF_width_microhertz*0.7
-            else:
-                xmin=None
-                
-            ax.set_xlim(xmin,s.f_nyq*1.01)
-            
-            ax.set_ylim(np.median(s.psd_raw[-100:])*0.2,np.max(s.psd_raw)*1.3)
-
-            if legend:         
-                ax.legend(loc='lower left')
-        
-        return numax
+        return numax_all
             #%%%%% rm background
     
     def make_Bkg_func(s):
@@ -2122,13 +2086,17 @@ class Star():
         s.Bkg_func=make_func_accept_Variables(Bkg_func)
         
     
-    def remove_Background(s,freq=False,psd=False
+    def remove_Background(s,freq=None,psd=None
                          ,plot=True,axPSD=False,legend=False
                          ,highpassfiltered=False,return_amp=False
                          ,initial_guess=False,initial_guess_numax=False,bounds=True):
     
         if axPSD:
             plot=True
+            
+        if freq is None:
+            freq=s.freq_raw
+            psd=s.psd_raw
         
         numax=s.fit_psd(freq=freq,psd=psd,plot=plot,ax=axPSD,legend=legend
                        ,highpassfiltered=highpassfiltered
@@ -2307,7 +2275,7 @@ class Star():
                            ,highpassfiltered=True
                            ,initial_guess=initial_guess#,bounds=bounds
                            ,SaveToClass=False)
-
+            
             dnui=s.get_dnu(freq=freqi,psd=psdi,numax=numaxi,plot=plot,smooth_stddev=s.smooth_stddev_dnucorr)#,interactive=True)
 
             dnus[idx_step]=dnui
@@ -2683,7 +2651,8 @@ class Star():
         
     def calc_theo_mixed_modes(s,pi_modes=False, gamma_modes=False, q=None, dpi_Ms=None, dnu=None,eps_g1=False,freq_minmax=False
                              , A_g_glitch=1, omega_g_glitch=1000, phi_g_glitch= 0.,Delta_g_glitch=0
-                             , A_p_glitch=1, tau_p_glitch  =1, phi_p_glitch= 0.,b_p_glitch=0):
+                             , A_p_glitch=1, tau_p_glitch  =1, phi_p_glitch= 0.,b_p_glitch=0
+                             , return_pg_mixed_modes_seperatly=False):
         
         if isinstance(pi_modes,bool):
             dpi_Ms=s.dpi_Ms
@@ -2727,7 +2696,6 @@ class Star():
             else:
                 eps_g1=s.eps_g1
                 
-        
         if isinstance(gamma_modes,bool):
             gamma_modes=calc_gamma_modes_theo(dpi_Ms=dpi_Ms,eps_g1=eps_g1,freq_minmax=freq_minmax,pi_modes=pi_modes,interp_kind=s.interp_kind
                                              ,buoyancy_glitch=s.buoyancy_glitch_freq,glitch_type=s.glitch_type,A_g=A_g_glitch,omega_g=omega_g_glitch,phi_g=phi_g_glitch,Delta_g=Delta_g_glitch)
@@ -2745,6 +2713,8 @@ class Star():
         
         Zeta=mixed_modes_class.calc_ζp(mixed_modes)
         
+        if return_pg_mixed_modes_seperatly:
+            return mixed_p_modes, mixed_g_modes
         return mixed_modes, Zeta, gamma_modes
     
     
@@ -2772,7 +2742,7 @@ class Star():
                 s.calc_theo_mixed_modes_discrete()
             else:
                 s.mixed_modes_theo,s.Zeta,s.gamma_modes_theo=s.calc_theo_mixed_modes()
-            mixed_modes_theo_n=s.mixed_modes_theo
+            mixed_modes_theo=s.mixed_modes_theo
             Zeta_n=s.Zeta
             
             if plot:
@@ -2784,7 +2754,7 @@ class Star():
                 ax.set_xlabel('ν (μHz)')
             
         else:
-            mixed_modes_theo_n,Zeta_n,_=s.calc_theo_mixed_modes(pi_modes=pi_modes, gamma_modes=False, q=q, dpi_Ms=dpi_Ms, dnu=dnu,eps_g1=eps_g1
+            mixed_modes_theo,Zeta_n,_=s.calc_theo_mixed_modes(pi_modes=pi_modes, gamma_modes=False, q=q, dpi_Ms=dpi_Ms, dnu=dnu,eps_g1=eps_g1
                                                                ,freq_minmax=freq_minmax
                                                                ,A_g_glitch=A_g_glitch,omega_g_glitch=omega_g_glitch,phi_g_glitch=phi_g_glitch,Delta_g_glitch=Delta_g_glitch
                                                                ,A_p_glitch=A_p_glitch,  tau_p_glitch=  tau_p_glitch,phi_p_glitch=phi_p_glitch,    b_p_glitch=    b_p_glitch)
@@ -2823,7 +2793,7 @@ class Star():
                 
             elif l==1:
                 use_pre_fitted_lor=False
-                modes_to_fit=mixed_modes_theo_n
+                modes_to_fit=mixed_modes_theo
                 
                 if SaveToClass:
                     freq_spacing_mixed_modes=np.zeros_like(modes_to_fit)
@@ -2860,8 +2830,9 @@ class Star():
                     if inflateFWHM:
                         fwhm_min= inflateFWHM*s.freq_resolution
                     else:
-                        fwhm_min= 2*s.freq_resolution/np.pi
-                    fwhm_convolved=np.sqrt(fwhm_theo**2+fwhm_min**2) 
+                        fwhm_min= 2*s.freq_resolution/np.pi #= 2/(np.pi*T) = linewidth for mode with lifetime T
+                        
+                    fwhm_convolved=np.sqrt(fwhm_theo**2+fwhm_min**2)  #approximation of fwhm_theo*spectral_window
                     fwhm=fwhm_convolved
                     amplitude   = amplitude_interpolated_l0(modei)*fwhm_theo/fwhm_convolved*1.5 #!!!
                     
@@ -3154,14 +3125,22 @@ class Star():
         if s.MCMC_or_dynesty:
             scale_free_parameters=False
         
-        q_minmax=[]
         
-        labels=[*["q"]*s.num_orders]
-        p0    =[*s.q]
+        q_minmaxi = (0.01,0.9)
+        if s.constant_q:
+            labels=["q"]
+            p0=[np.mean(s.q)]
+            
+            q_minmax=[q_minmaxi]
+        else:
+            labels=[*["q"]*s.num_orders]
+            p0    =[*s.q]
+            
+            q_minmax=[]
         
         if s.acoustic_glitch:
             p0+=[s.eps_p1_init]
-            pi_minmax   = [(s.eps_p1_init-0.2,s.eps_p1_init+0.2)]
+            pi_minmax   = [(s.eps_p1_init-0.25,s.eps_p1_init+0.25)]
             labels+=["ε_p"]
         else:
             p0+=[*s.pi_modes_init]
@@ -3178,17 +3157,17 @@ class Star():
             eps_g1_minmax=[]
             
         for i_np in range(s.num_orders):
-            q_minmax+=[(0.01,0.9)]
+            if not s.constant_q:
+                q_minmax+=[q_minmaxi]
             if not s.acoustic_glitch:
-                pi_minmax   += [(s.pi_modes_init[i_np] - 0.25 * s.dnu
-                                ,s.pi_modes_init[i_np] + 0.25 * s.dnu)]
+                pi_minmax   += [(s.pi_modes_init[i_np] - 0.2 * s.dnu
+                                ,s.pi_modes_init[i_np] + 0.2 * s.dnu)]
             if not s.buoyancy_glitch:
                 eps_g1_minmax+=[(s.eps_g1[i_np]-0.5,s.eps_g1[i_np]+0.5)]
         
         bounds=q_minmax+pi_minmax+eps_g1_minmax
         
         if s.acoustic_glitch:
-            
             labels+=["A_p","τ_p","φ_p","b_p"]
             p0+= [s.A_p_glitch,s.tau_p_glitch,s.phi_p_glitch,s.b_p_glitch] 
             
@@ -3208,26 +3187,27 @@ class Star():
                     p0+=[0.]
                     labels+=["Δ"]
                     Delta_g_glitch_minmax = [(0,1000)]
-                A_g_glitch_minmax       = (max([0,s.A_g_glitch*0+0.1]) ,min([3000 ,max([s.A_g_glitch*2  ,1000.])]))
+                A_g_glitch_minmax       = (0 ,min([3000 ,max([s.A_g_glitch*2  ,1000.])]))
             else:
-                A_g_glitch_minmax       = (max([0,s.A_g_glitch*0+0.1]) ,min([100  ,max([s.A_g_glitch*2    ,5.])]))
-                
+                A_g_glitch_minmax       = (0 ,min([100  ,max([s.A_g_glitch*2    ,5.])]))
 
-            omega_g_glitch_minmax   = (max([1,s.omega_g_glitch*0+1]),min([5000,max([s.omega_g_glitch*3,2000])]))
+            omega_g_glitch_minmax   = (max([1,s.omega_g_glitch*0+1]),min([5000,max([s.omega_g_glitch*3,3000])]))
             phi_g_glitch_minmax     = (s.phi_g_glitch-np.pi,s.phi_g_glitch+np.pi)
             
             bounds+=[A_g_glitch_minmax,omega_g_glitch_minmax,phi_g_glitch_minmax]+Delta_g_glitch_minmax
             
-        mask=(s.freq>s.freq_minmax_to_Fit[0]) & (s.freq<s.freq_minmax_to_Fit[1])
-        x_freq=s.freq[mask]
-        y_psd =(s.psd[mask]+s.Bkg_func(x_freq))/s.y_to_scale
-        
         if s.fit_dpi:
             p0+= [s.dpi_Ms]
             labels+=['ΔΠ']
-            bounds+=[(s.dpi_Ms*0.95,s.dpi_Ms*1.05)] 
+            if not s.dpi_bounds:
+                bounds+=[(s.dpi_Ms*0.95,s.dpi_Ms*1.05)] 
+            else:
+                bounds+=[s.dpi_bounds]
             
-        x_fit=np.linspace(s.freq_minmax_to_Fit[0],s.freq_minmax_to_Fit[1],10000)
+        mask=(s.freq>s.freq_minmax_to_Fit[0]) & (s.freq<s.freq_minmax_to_Fit[1])
+        x_freq=s.freq[mask]
+        y_psd =(s.psd[mask]+s.Bkg_func(x_freq))/s.y_to_scale
+            
         s.cornerplot_labels=labels
         mins = np.array([b[0] for b in bounds])
         maxs = np.array([b[1] for b in bounds])
@@ -3259,8 +3239,12 @@ class Star():
                         return 1e20
                     return -np.inf
             
-            q            = params[:s.num_orders]
-            params       = params[s.num_orders:] 
+            if s.constant_q:
+                q            = params[0]
+                params       = params[1:] 
+            else:
+                q            = params[:s.num_orders]
+                params       = params[s.num_orders:] 
             
             if not s.acoustic_glitch:
                 pi_modes = params[:s.num_orders]
@@ -3390,6 +3374,9 @@ class Star():
                 
                 s.template_result         = sampler
                 s.template_result_sample  = res.samples
+                s.template_result_logz    = res.logz
+                s.template_result_logz_err= res.logzerr
+                s.template_result_logl    = res.logl
                 s.template_result_weights = np.exp(res.logwt - res.logz[-1])
             
                 s.statistics_type='weighted probability density'
@@ -3481,11 +3468,18 @@ class Star():
                         s.results_template_fit_with_noise[n_iter-1]=result_n.x
         
         if SaveToClass:
-            s.q                = s.result_minimize[            :s.num_orders]
-            result_n_temp      = s.result_minimize[s.num_orders:]
-            
-            s.q_uncertainties                = s.result_uncertainties[            :s.num_orders]
-            result_n_temp_uncertainties      = np.array(s.result_uncertainties)[s.num_orders:]
+            if s.constant_q:
+                s.q                = s.result_minimize[0]
+                result_n_temp      = s.result_minimize[1:]
+                
+                s.q_uncertainties                = s.result_uncertainties[0]
+                result_n_temp_uncertainties      = np.array(s.result_uncertainties)[1:]
+            else:
+                s.q                = s.result_minimize[            :s.num_orders]
+                result_n_temp      = s.result_minimize[s.num_orders:]
+                
+                s.q_uncertainties                = s.result_uncertainties[            :s.num_orders]
+                result_n_temp_uncertainties      = np.array(s.result_uncertainties)[s.num_orders:]
             
             if not s.acoustic_glitch:
                 s.pi_modes_init= result_n_temp[:s.num_orders]
@@ -3555,7 +3549,8 @@ class Star():
         
         template_scaled=s.generate_template(freq_minmax=s.freq_minmax_to_Fit,SaveToClass=True)
         if plot:
-            template_scaled_smoothed=s.generate_template(inflateFWHM=s.inflateFWHM,freq_minmax=s.freq_minmax_to_Fit,SaveToClass=False)
+            x_fit=np.linspace(s.freq_minmax_to_Fit[0],s.freq_minmax_to_Fit[1],10000)
+            template_scaled_smoothed=s.generate_template(inflateFWHM=smoothingFactor,freq_minmax=s.freq_minmax_to_Fit,SaveToClass=False)
         
             s.ax_templateFit.plot(x_fit,template_scaled(x_fit)*s.y_to_scale)
             s.ax_templateFit.plot(x_fit,template_scaled_smoothed(x_fit)*s.y_to_scale,color='red')
@@ -3567,6 +3562,85 @@ class Star():
                            ,color="k",marker='x',label='',ylabel="Flux",xlabel=False
                            ,ls='None',ms=2,zorder=None
                             )
+        
+    def plot_psd(s,zoom=True,logaxis=False,**kwargs):
+        plot_PSD(freq=s.freq_full,psd=s.psd_full,axPSD=False,nu_max=s.numax,dnu=s.dnu
+                 ,zoom=zoom,dnufactor=s.dnufactor,flip=False
+                 ,logaxis=logaxis,psdColor='k',color_modes=['limegreen','dodgerblue',(255/256,171/256,53/256),'orange'],color_nu_max_line='grey',modes=False,label=None
+                 ,alpha=1,**kwargs)
+        
+    def plot_backgroundfit(s,ax=None,legend=False):
+        
+        if not hasattr(s,'freq_toFitB'): #!!!
+            s.freq_toFitB,s.psd_toFitB= smoothing(s.freq_raw,s.psd_raw,bins=10001,method='gauss',wlength=51,polyorder=1,stddev=20,plot=False,do_bin=True)
+        # bin_freq,bin_psd=smoothing(freq,psd,bins=int(1e4+1),method='savgol',wlength=51,polyorder=1,stddev=20,plot=plot_all,do_bin=True,log_bins=False)
+
+        background_fit=s.create_PSD_background_fct(num_gauss=s.num_gauss,num_harvey=s.num_harvey,exponent_harvey=s.exponent_harvey,Xi_harvey=False,return_sep=True)
+        Fit, G, H, R, white_noise = background_fit(s.freq_toFitB, *s.bkg_parameters)
+            
+        if ax is None:
+            ax=generate_subplot_grid((1,1))
+            
+        ax.set_xscale('log')
+        ax.set_yscale('log')
+        
+        ax.set_xlabel('ν (μHz)')
+        ax.set_ylabel('PSD (ppm² μHz$^{-1}$)')
+            
+        # powerpointblue= (36/259, 49/259, 88/259)
+        lightblue=(195/259,209/256,234/256)
+        # darkblue=(8 /256,31/256,92/256)
+        colorpsd=lightblue
+        ax.plot(s.freq_raw,s.psd_raw,color=colorpsd,alpha=0.6)#'lightgrey')
+        ax.plot(s.freq_toFitB,s.psd_toFitB,'k')
+        
+        # ax.plot(s.freq_raw,s.psd_raw,color='lightgrey',zorder=-5)
+            
+        color_numax='goldenrod'
+        color_numax=(255/256,161/256,17/256)
+        
+        ax.plot(s.freq_toFitB,Fit,label=r'P$_\mathrm{fit}$',color='red',zorder=20,linewidth=2)
+        ax.plot(s.freq_toFitB,(Fit-R*(np.sum(G,0))),':',color='red',zorder=20,linewidth=2,label=r'P$_\mathrm{bkg}$')
+
+        ax.plot(s.freq_toFitB,np.ones_like(s.freq_toFitB)*white_noise,'--',label='W',color='orange')#'aquamarine')
+        
+        colorhi=['darkblue','blue','royalblue']
+        for hi in range(s.num_harvey):  
+            # H = s.Harvey(s.freq_toFitB,amp_harvey[hi],char_freq_harvey[hi],exponent=exponent_harvey)
+            ax.plot(s.freq_toFitB,H[hi],'--',label=r'H$_{}$'.format(hi),color=colorhi[hi])
+            
+        colorgi=['hotpink','fuchsia']
+        for gi in range(s.num_gauss):  
+            # G = s.Gauss(s.freq_toFitB,amp_gauss[gi],sig_gauss[gi],s.numax[gi])
+            ax.plot(s.freq_toFitB,G[gi],'--',label=r'G$_{}$'.format(gi),color=colorgi[gi])
+            
+        for numaxi in s.numax_all:
+            ax.axvline(numaxi,color=color_numax,alpha=0.7,linestyle='-')
+            ax.text(numaxi*1.1,np.max(s.psd_raw)*0.5,'ν$_{{max}}$ = {:.2f} μHz'.format(numaxi))#,transform=ax.transAxes)
+        # ax.plot(bin_freq,B0,'--',label=r'B$_0$',color='darkblue')
+        # if not simple_fit:
+        #     ax.plot(bin_freq,B1,'--',label=r'B$_1$',color='blue')
+        # if not used_highpassfilter:
+        #     ax.plot(bin_freq,B2,'--',label=r'B$_2$',color='royalblue')
+        
+        # ax.plot(bin_freq,G,'-.',label=r'G$_A$',color='hotpink')
+    
+        # ax.axvline(nu_max_B,color=color_numax,alpha=0.7,linestyle='-')
+        
+        # ax.axhline(parameters[5],color=color_numax,alpha=0.7,linestyle='-')
+        # ax.axhline(parameters[7],color=color_numax,alpha=0.7,linestyle='-')
+
+        if hasattr(s,'HPF_width_microhertz') and not isinstance(s.HPF_width_microhertz,bool):
+            xmin=s.HPF_width_microhertz*0.7
+        else:
+            xmin=None
+            
+        ax.set_xlim(xmin,s.f_nyq*1.01)
+        
+        ax.set_ylim(np.median(s.psd_raw[-100:])*0.2,np.max(s.psd_raw)*1.3)
+
+        if legend:         
+            ax.legend(loc='lower left')
         
     def plot_template(s,event):
         plt.figure(figsize=(10,5))
@@ -3637,12 +3711,14 @@ class Star():
         freq=np.linspace(min(s.pi_modes),max(s.pi_modes),1000)
         q_fitted=calc_q(freq,*fitted_params)
         
-        plt.figure(figsize=(6,3.5))
-        ax=plt.gca()
+        
+        ax=generate_subplot_grid(figsize=(5,3),grid=(1,1),bottom=0.15,left=0.15)
         ax.errorbar(s.pi_modes/s.dnu,s.q,yerr=np.array(s.q_uncertainties).T,marker='o',ls='None',color='k')
         # ax.plot(freq/s.dnu,q_fitted,'r')
         ax.set_xlabel('ν/Δν')
         ax.set_ylabel('q')
+        ax.set_ylim(0.1,0.45)
+        # a.set_xlim()
         
     def plot_dpi_obs(s):
          
@@ -3674,10 +3750,22 @@ class Star():
     def plot_fit_template_corner(s,plot=True,bins=30,thin=1):
         sample=s.template_result_sample.T[:,::thin]
         weights=s.template_result_weights[::thin]
+        
+        period_for_circular_parameters=[]
+        for idx in s.idx_for_circular_parameters:
+            if s.cornerplot_labels[idx] in ['φ_p', 'φ_g']:
+                period_for_circular_parameters+=[2*np.pi]
+            else:
+                period_for_circular_parameters+=[1]
+     
+        # sample[-1]=sample[-1]*1e6
         results,uncertainties=plot_cornerplot(sample,labels=s.cornerplot_labels,xi=None,L=weights,labelcbar='',mask=None, levels=[0.68, 0.95]
-                       ,statistics_type=s.statistics_type,bins = bins,median_or_mode='mode'
-                       ,kde_2D_plot=False,idx_for_circular_parameters=[s.idx_for_circular_parameters[0]],plot=plot) #!!!
-            
+                       ,statistics_type=s.statistics_type,bins = bins,median_or_mode='mode'  #!!!
+                       ,kde_2D_plot=False
+                       ,idx_for_circular_parameters=s.idx_for_circular_parameters
+                       ,period_for_circular_parameters=period_for_circular_parameters
+                       ,plot=plot)
+
         return results,uncertainties
     
 #%% Echelle       
@@ -3804,7 +3892,7 @@ class Echelle:
             
     def __getattr__(es, name):
         if name == "psd_no02":
-            return s.psd_sm
+            return es.s.psd_sm
         raise AttributeError(f"{name} not found")
         
         
@@ -3869,6 +3957,7 @@ class Echelle:
         if es.double:
             ax.axvline(0,color='k',zorder=100)
             double=2
+            n*=2
         else:
             double=1
         
@@ -4135,6 +4224,8 @@ class Echelle:
                         interp1d(s.pi_modes_init,s.q,kind='nearest',bounds_error=False,fill_value=(s.q[0],s.q[-1])))
                 # es.eps_p1_init_func=make_func_accept_Variables(
                     # interp1d(s.pi_modes_init,s.eps_p1_init,kind=s.interp_kind,bounds_error=False,fill_value=(s.eps_p1_init[0],s.eps_p1_init[-1])))
+                elif hasattr(es,'q_func'):
+                    delattr(es, 'q_func')
                 
                 if es.estimate_eps_using_modes1:
                     color_pi_modes_init='red'
@@ -4406,14 +4497,24 @@ class Echelle:
             es.eps_boxes[idx].set_val(str(round(s.eps_p1_init[idx], es.round_val)))
             
         elif group == "q_boxes":
-            s.q[idx] += upIdown
-            es.q_boxes[idx].set_val(str(round(s.q[idx], es.round_val)))
+            if isinstance(s.q,(list,np.ndarray)):
+                s.q[idx] += upIdown
+                es.q_boxes[idx].set_val(str(round(s.q[idx], es.round_val)))
+            else:   
+                s.q += upIdown
+                for q_box in es.q_boxes:
+                    q_box.set_val(str(round(s.q, es.round_val)))
             
     def _update_box_after_fit(es):
         s=es.s
         es.pause_redraw=True
         for i_n in range(len(es.q_boxes)):
-            es.q_boxes[i_n].set_val(str(round(s.q[i_n], es.round_val)))
+            if s.constant_q:
+                for q_box in es.q_boxes:
+                    q_box.set_val(str(round(s.q, es.round_val)))
+            else:
+                es.q_boxes[i_n].set_val(str(round(s.q[i_n], es.round_val)))
+                
             if not s.acoustic_glitch:
                 es.eps_boxes[i_n].set_val(str(round(s.eps_p1_init[i_n], es.round_val)))
             
@@ -4635,7 +4736,10 @@ class Echelle:
             es.active_box_group = "q_boxes"
             es.idx_active_box = idx
             
-            s.q[idx] = abs(float(new_val))
+            if isinstance(s.q,(list,np.ndarray)):
+                s.q[idx] = abs(float(new_val))
+            else:
+                s.q = abs(float(new_val))
             es.redraw()
         
         if not s.acoustic_glitch:
