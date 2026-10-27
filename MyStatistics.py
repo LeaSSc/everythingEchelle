@@ -79,7 +79,7 @@ class vonMises_kde:
 def plot_cornerplot(parameters,labels,xi=None,L=None,labelcbar='',mask=None
                    ,levels=[0.68, 0.95],get_percentiles_using_kde=False
                    ,statistics_type='probability density',bins = 100, median_or_mode='median'
-                   ,kde_2D_plot=False,smooth2Dhist=False,idx_for_circular_parameters=[]
+                   ,kde_2D_plot=False,smooth2Dhist=False,idx_for_circular_parameters=[],period_for_circular_parameters=[]
                    ,bins_tothist=50,plot=True):
     
     if L is None and not xi is None:
@@ -93,9 +93,10 @@ def plot_cornerplot(parameters,labels,xi=None,L=None,labelcbar='',mask=None
         xi= xi[~np.isnan(xi)]
         # L=None
     
+    circular_period_dict = dict(zip(idx_for_circular_parameters,period_for_circular_parameters))
     for idx_p in idx_for_circular_parameters:
-        parameters[idx_p] = parameters[idx_p] % 1
-    
+        parameters[idx_p] = parameters[idx_p] % circular_period_dict[idx_p]
+        
     num=len(labels)-1
     xparameters=parameters[:-1]
     xlabels=labels[:-1]
@@ -122,7 +123,7 @@ def plot_cornerplot(parameters,labels,xi=None,L=None,labelcbar='',mask=None
         
         case 'raw chi^2' | 'raw likelihood':
             add1=0
-            cmap_name='magma'
+            cmap_name='Greys'
             cmap = plt.colormaps.get_cmap(cmap_name)
             cmap=c.LinearSegmentedColormap.from_list(cmap,cmap(np.linspace(0, 0.93, 100)))
             
@@ -165,18 +166,22 @@ def plot_cornerplot(parameters,labels,xi=None,L=None,labelcbar='',mask=None
                             w=weights
                             
                             if idx_yax in idx_for_circular_parameters:
-                                x_min=0.
-                                x_max=1.
+                                x_period = circular_period_dict[idx_yax]
+
+                                x_min = 0.
+                                x_max = x_period
                                 
-                                x_median=np.median(x)
-                                x = (x - x_median + 0.5) % 1
+                                x_median = np.median(x)
+                                x = (x - x_median + x_period/2) % x_period
                             
                             if idx_xax+1 in idx_for_circular_parameters:
-                                y_min=0.
-                                y_max=1.
+                                y_period = circular_period_dict[idx_xax+1]
+
+                                y_min = 0.
+                                y_max = y_period
                                 
-                                y_median=np.median(y)
-                                y = (y - y_median + 0.5) % 1
+                                y_median = np.median(y)
+                                y = (y - y_median + y_period/2) % y_period
                             
                             xy = np.vstack([x, y])
     
@@ -188,12 +193,12 @@ def plot_cornerplot(parameters,labels,xi=None,L=None,labelcbar='',mask=None
                             Z = Z.reshape(X.shape)
                             
                             if idx_yax in idx_for_circular_parameters:
-                                X= (X+ x_median - 0.5) %1
-                                x= (x+ x_median - 0.5) 
+                                X = (X + x_median - x_period/2) % x_period
+                                x = (x + x_median - x_period/2)
                                 
                             if idx_xax+1 in idx_for_circular_parameters:
-                                Y= (Y+ y_median - 0.5) %1
-                                y= (y+ y_median - 0.5) 
+                                Y = (Y + y_median - y_period/2) % y_period
+                                y = (y + y_median - y_period/2)
                             
                             dx = (x_max - x_min) / (bins - 1)
                             dy = (y_max - y_min) / (bins - 1)
@@ -243,25 +248,34 @@ def plot_cornerplot(parameters,labels,xi=None,L=None,labelcbar='',mask=None
                                                         # ,vmin=vmin,vmax=vmax 
                                                         )
                         
-                        levels_trans = get_contour_levels(Z, levels)
+                        levels_trans_temp = get_contour_levels(Z, levels)
                         
                         Z_min, Z_max = Z.min(), Z.max()
+                        
+                        levels_trans = levels_trans_temp[(levels_trans_temp >= Z_min) &
+                                                    (levels_trans_temp <= Z_max)]
+                        
+                        if len(levels_trans) < len(levels_trans_temp):
+                            print('contour error!!!!!!!!!!!!!!')
+                        if len(levels_trans)>0:
                         # Z_norm = (Z - Z_min) / (Z_max - Z_min)  
-                        cut_norm = (levels_trans[0] - Z_min) / (Z_max - Z_min)  
-                        
-                        n_pre = int(cut_norm * n_colors)
-                        base_colors = cmap(np.linspace(0.1, 1, n_colors-n_pre))
-    
-                        white = np.array([[1.0, 1.0, 1.0, 0.0]] * n_pre)
-                        newcolors = np.vstack((white, base_colors))
+                            cut_norm = (levels_trans[0] - Z_min) / (Z_max - Z_min)  
                             
-                        cmapi = ListedColormap(newcolors)
-                        
-                        p = axes[idx_xax1][idx_yax].pcolormesh(X, Y, Z, cmap=cmapi, shading='auto')#, vmin=0, vmax=1)
+                            n_pre = int(np.ceil(cut_norm * n_colors))
+                            base_colors = cmap(np.linspace(0.1, 1, n_colors-n_pre))
+                            
+                            white = np.ones((n_pre, 4))
+                            white[:, 3] = 0.0
 
-                        axes[idx_xax1][idx_yax].contour( Xcent, Ycent, Z, levels=levels_trans, colors='k')
-                        axes[idx_xax1][idx_yax].contourf(Xcent, Ycent, Z, levels=[min(levels_trans),Z.max()], colors='white', zorder=-20)
-                        
+                            newcolors = np.vstack((white, base_colors))
+                                
+                            cmapi = ListedColormap(newcolors)
+    
+                            axes[idx_xax1][idx_yax].contour( Xcent, Ycent, Z, levels=levels_trans, colors='k',zorder=-18)
+                            axes[idx_xax1][idx_yax].contourf(Xcent, Ycent, Z, levels=[min(levels_trans),Z.max()], colors='white', zorder=-20)
+                        p = axes[idx_xax1][idx_yax].pcolormesh(X, Y, Z, cmap=cmapi, shading='auto',zorder=-19)#, vmin=0, vmax=1)
+        
+                            
                         avoid_edge_ticks(axes[idx_xax1][idx_yax])
                         axes[idx_xax1][idx_yax].tick_params(axis='x',rotation=30)
     
@@ -331,7 +345,8 @@ def plot_cornerplot(parameters,labels,xi=None,L=None,labelcbar='',mask=None
         bin_width = edges[1] - edges[0]
         hist_area = np.sum(hist_weighted) * bin_width 
         
-        result,uncertainty,kde,median=evaluate_sampler_result(samples,weights,circular=circular,bw_method=bw_method,kappa=kappa
+        result,uncertainty,kde,median=evaluate_sampler_result(samples,weights,circular=circular,period=circular_period_dict.get(idx_xax, False)
+                                ,bw_method=bw_method,kappa=kappa
                                 ,median_or_mode=median_or_mode,get_percentiles_using_kde=get_percentiles_using_kde)
         
         uncertainties.append(uncertainty)
@@ -369,11 +384,12 @@ def plot_cornerplot(parameters,labels,xi=None,L=None,labelcbar='',mask=None
             
     return np.array(results),uncertainties
             
-def evaluate_sampler_result(samples,weights,circular=False,median_or_mode='mode',get_percentiles_using_kde=False
+def evaluate_sampler_result(samples,weights,circular=False,period=False
+                            ,median_or_mode='mode',get_percentiles_using_kde=False
                             ,bw_method=None,kappa=None):
     x = np.linspace(samples.min(), samples.max(), 10000)
     if circular:
-        kde = vonMises_kde(samples, weights=weights,period=1.,kappa=kappa)
+        kde = vonMises_kde(samples, weights=weights,period=period,kappa=kappa)
     else:
         kde = gaussian_kde(samples, weights=weights,bw_method=bw_method)
         
@@ -383,12 +399,12 @@ def evaluate_sampler_result(samples,weights,circular=False,median_or_mode='mode'
     mode_kde = x[mode_idx]
     
     if circular:
-        x = (x - mode_kde + 0.5) % 1
+        x = (x - mode_kde + period/2) % period
         idx_sort = np.argsort(x)
         x = x[idx_sort]
         y = y[idx_sort]
         
-        samples= (samples-mode_kde+0.5)%1
+        samples= (samples-mode_kde+period/2)%period
     
     idx_sort = np.argsort(samples)
     samples_sorted = samples[idx_sort]
@@ -434,16 +450,16 @@ def evaluate_sampler_result(samples,weights,circular=False,median_or_mode='mode'
 
     if circular:
         if median_or_mode == 'mode':
-            center_shifted = 0.5
+            center_shifted = period/2
         elif median_or_mode == 'median':
             center_shifted = median
             
         lower_err = center_shifted - lower_bound
         upper_err = upper_bound - center_shifted
         
-        lower_bound = (lower_bound + mode_kde - 0.5) % 1
-        upper_bound = (upper_bound + mode_kde - 0.5) % 1
-        median      = (median      + mode_kde - 0.5) % 1
+        lower_bound = (lower_bound + mode_kde - period/2) % period
+        upper_bound = (upper_bound + mode_kde - period/2) % period
+        median      = (median      + mode_kde - period/2) % period
     
     if median_or_mode=='mode':
         result=mode_kde
@@ -469,7 +485,7 @@ def neg_log_likelihood_X22dof(params=None ,x=None, y=None, func=False, model=Fal
             y_fit = model(x)
             
     y_fit = np.clip(y_fit, 1e-20, None)
-    return np.sum(np.log(y_fit) + y / y_fit)
+    return np.sum(np.log(y_fit) + y / y_fit) 
         
 class Chi2TwoDofFitter:
     def __init__(self, minimizer='minimize',MCMC=False,labels=['fwhm','amp','x0']):
@@ -628,11 +644,15 @@ class Fitter():
                      ,minimizer_options = {"method": "L-BFGS-B"
                                           ,"options": {"ftol": 1e-14, "gtol": 1e-12, "maxiter": 5000}}
                      ,scale_free_parameters=False
+                     ,scale_y=False
+                     ,allow_hitting_bounds=False
                      
                      ,polish=True,inflate_bounds = 1.0
                      
+                     ,loglikelihood_factor=1
+                     
                      #MCMC
-                     ,nwalkers_factor=10,nsteps=2000,thin=False,burnin=200
+                     ,nwalkers_factor=10,nsteps=2000,thin=1,burnin=200
                      ,set_walkers_percentage_around_initial_guess=False #if False equaly distribute inside boarders
                      
                      #dynesty
@@ -641,6 +661,7 @@ class Fitter():
                      #minimizers
                      ,niterations_for_fit=False
                      ,popsize=None
+                     ,calc_hessian=False
                      
                      #cornerplot
                      ,get_percentiles_using_kde=False,bins = 100,median_or_mode='median'
@@ -657,9 +678,14 @@ class Fitter():
         
         self.minimizer_options=minimizer_options
         self.scale_free_parameters=scale_free_parameters
+        self.scale_y = scale_y
         
         self.polish=polish
         self.inflate_bounds=inflate_bounds
+        
+        self.allow_hitting_bounds=allow_hitting_bounds
+        
+        self.loglikelihood_factor=loglikelihood_factor
         
         #MCMC
         self.nwalkers_factor=nwalkers_factor
@@ -674,6 +700,7 @@ class Fitter():
         #minimizers
         self.niterations_for_fit=niterations_for_fit
         self.popsize=popsize
+        self.calc_hessian=calc_hessian
         
         #cornerplot
         self.median_or_mode=median_or_mode
@@ -684,6 +711,7 @@ class Fitter():
         self.idx_for_circular_parameters=idx_for_circular_parameters
         self.bins_tothist=bins_tothist
         
+        #########
         self.func=func
         self.bounds=bounds
         self.x=x
@@ -697,7 +725,7 @@ class Fitter():
             self.mins = np.array([b[0] for b in self.bounds])
             self.maxs = np.array([b[1] for b in self.bounds])
         
-    def set_parameters_to_fit(self,labels=None,**kwargs):
+    def set_parameters_to_fit(self,labels=None,**kwargs): #define initial guess
         
         self.parameter_names=list(kwargs.keys())
         parameter_names_flat=[]
@@ -721,6 +749,9 @@ class Fitter():
             self.labels=parameter_names_flat
         else:
             self.labels=labels
+            
+    def set_additional_inputs(self,**kwargs):
+        self.input_kwargs=kwargs
         
     def _reshape(self, flat):
         unflat = []
@@ -732,10 +763,6 @@ class Fitter():
                 unflat.append(flat[idx:idx+length])
             idx += length
         return unflat
-                    
-    def set_additional_inputs(self,**kwargs):
-        self.input_kwargs=kwargs
-        
 
     def _normalize(self,p0):
         return (p0 - self.mins) / (self.maxs - self.mins)
@@ -747,12 +774,20 @@ class Fitter():
 
         
     def _to_minimize(self,y_fit):
+        if self.scale_y:
+            y     = self.y    /self.y_scale
+            y_sig = self.y_sig/self.y_scale
+            y_fit = y_fit     /self.y_scale
+        else:
+            y     = self.y    
+            y_sig = self.y_sig
+            
         if self.likelihood=='chi2':
-            return np.sum(((self.y-y_fit)/self.y_sig)**2)
+            return np.sum(((y-y_fit)/y_sig)**2)
             
         elif self.likelihood=='chi22dof':
             y_fit = np.clip(y_fit, 1e-20, None)
-            return np.sum(np.log(y_fit) + self.y / y_fit)
+            return np.sum(np.log(y_fit) + y / y_fit) * self.loglikelihood_factor
             
     def _to_optimise(self,params):
         if self.scale_free_parameters:
@@ -767,7 +802,7 @@ class Fitter():
                     return 1e20
                 return -np.inf
         
-        y_fit=self.func(self.x,kwargs,self.input_kwargs)
+        y_fit=self.func(self.x,**kwargs,**self.input_kwargs)
     
         if self.minimizer in ['MCMC','dynesty']:
             return -self._to_minimize(y_fit=y_fit)
@@ -795,6 +830,10 @@ class Fitter():
         else:
             initial_guess=self.initial_guess_flat
             bounds=self.bounds
+            
+        if self.scale_y:
+            if not hasattr(self, 'y_scale'):
+                self.y_scale=np.max(self.y)
 
         ndim = len(initial_guess)
         weights = None
@@ -807,7 +846,20 @@ class Fitter():
                         f=1
                     else:
                         f=self.set_walkers_percentage_around_initial_guess
-                    pos = initial_guess + f*np.random.randn(nwalkers, ndim)
+                    # pos = initial_guess*(1 + f*np.random.randn(nwalkers, ndim))
+                    pos=np.zeros((nwalkers, ndim))
+                    for i_walker in range(nwalkers):
+                        n_while=0
+                        while True:
+                            p = initial_guess * (1 + f * np.random.randn(ndim))
+                
+                            if np.all(p > self.mins) and np.all(p < self.maxs):
+                                pos[i_walker] = p
+                                break
+                            n_while+=1
+                            if n_while>5:
+                                print("set_walkers_percentage_around_initial_guess too big")
+
                 else:
                     pos = np.array([np.random.uniform(low=b[0], high=b[1], size=nwalkers) for b in bounds]).T
         
@@ -841,6 +893,7 @@ class Fitter():
             
                 self.statistics_type='weighted probability density'
                 
+        #---------------------- cornerplot -------------------------#
             results,uncertainties=plot_cornerplot(self.samples.T,labels=self.labels,xi=None,L=weights
                         ,levels=[0.68, 0.95],get_percentiles_using_kde=False
                         ,statistics_type=self.statistics_type,bins = self.bins, median_or_mode=self.median_or_mode
@@ -852,6 +905,7 @@ class Fitter():
             
             ############################# polish ############################
             if self.polish:
+                self.result_unpolished=results
                 bounds_tight = [(result - self.inflate_bounds * sig[0],result + self.inflate_bounds * sig[1]) for result, sig in zip(results, uncertainties)]
                 
                 minimizer_temp=self.minimizer
@@ -860,6 +914,7 @@ class Fitter():
                 self.minimizer=minimizer_temp
                 
                 self.result_polished=result_minimize.x
+                self.result=self.result_polished
         
         else:
             #######################################################################
@@ -893,7 +948,7 @@ class Fitter():
                                             ,niter=10000)
                     self.results[n_iter]= self._denormalize(result_n.x) 
                     
-                if n_iter==0:
+                if n_iter==0 and self.calc_hessian:
                     cov = result_n.hess_inv.todense()
                     self.uncertainties = np.sqrt(np.diag(cov))
                     print('hessian')
@@ -907,7 +962,28 @@ class Fitter():
                         print('num Hessian failed')
                         
             self.result=self.results[0]
-                        
+            
+            if not self.allow_hitting_bounds:
+                failed=self._check_fit_bounds()
+                if failed:
+                    return False
+            
+        self.fitted_parameters = dict(zip(self.parameter_names, self._reshape(self.result)))
+        
         return self._reshape(self.result)
+    
+    def _check_fit_bounds(self, tol=1e-12):
+        failed=False
+        for i_res,(res,bound) in enumerate(zip(self.result,self.bounds)):
+            if any(np.array(bound) == None):
+                continue
+            if res-tol<bound[0] or res+tol> bound[1]:
+                print('Fit failed!!!!!')
+                print(f'   {self.labels[i_res]}: {res}   p0: {self.initial_guess_flat[i_res]}')
+                print(f'                                 bounds: {bound}')
+                failed=True
+        return failed
+    
+
         
     
