@@ -182,7 +182,11 @@ def generate_subplot_grid(grid=(2,1),figsize=None,share_y=False,share_x=False
         return axes,axes_twin
     return axes
 
-def update_colors_for_ploting(data,colors):
+def update_colors_for_ploting(data,colors,scale='linear',return_norm=False):
+    
+    if isinstance(colors,str):
+        cmap = plt.colormaps[colors]
+        colors=cmap
     
     if not isinstance(colors, (list, np.ndarray,c.LinearSegmentedColormap,c.ListedColormap)): 
         if not colors:
@@ -199,13 +203,18 @@ def update_colors_for_ploting(data,colors):
     if isinstance(colors,(c.LinearSegmentedColormap,c.ListedColormap)):
         colorss=[0]*len(data)
         
-        norm = c.Normalize(vmin=np.min(data), vmax=np.max(data))
-        for i_c in range(len(data)):
-            colorss[i_c]=cmap(norm(data[i_c]))
-            #colorss[i_c]=colors(i_c/len(data))
+        if scale == 'linear':
+            norm = c.Normalize(vmin=np.min(data), vmax=np.max(data))
+        elif scale == 'log':
+            norm = c.LogNorm(vmin=np.min(data), vmax=np.max(data))
+    
+    for i_c in range(len(data)):
+        colorss[i_c] = cmap(norm(data[i_c]))
         
         colors=colorss
 
+    if return_norm:
+        return cmap,colors,norm
     return cmap,colors
 
 def cut_cmap(cmapname='viridis',minmax=[0,1],cmap=False):
@@ -271,4 +280,14 @@ def avoid_edge_ticks(ax, axis='both', frac=0.05):
             
             ax.set_yticks(ticks)
             ax.set_ylim(axmin,axmax)
+            
+def get_log_edges_for_pcolormesh(centers):
+    log_c = np.log10(centers)
+    diff_log = np.diff(log_c)
+    
+    log_edges = np.zeros(len(centers) + 1)
+    log_edges[1:-1] = log_c[:-1] + diff_log / 2
+    log_edges[0] = log_c[0] - diff_log[0] / 2
+    log_edges[-1] = log_c[-1] + diff_log[-1] / 2
+    return 10**log_edges
             
